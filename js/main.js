@@ -99,25 +99,24 @@ const App = {
     });
   },
   getDownloadsView: function(results) {
-    let _this = App;
     let html = "";
 
     results.forEach(item => {
-      if (_this.isDangerous(item)) {
+      if (this.isDangerous(item)) {
         setTimeout(() => chrome.downloads.acceptDanger(item.id), 100);
       }
 
       if (item.state === "in_progress" && !item.paused) {
-        _this.startTimer(item.id);
+        this.startTimer(item.id);
       }
 
-      html += _this.getDownloadView(item);
+      html += this.getDownloadView(item);
     });
 
     const $target = $("#downloads");
     if (html) {
       $target.innerHTML = html;
-      if (_this.resultsLength > _this.resultsLimit) {
+      if (this.resultsLength > this.resultsLimit) {
         $target.innerHTML += Template.buttonShowMore();
       }
     } else {
@@ -138,61 +137,55 @@ const App = {
         buttons = Template.button("primary", "retry", "Retry");
       }
     } else if (event.state === "interrupted") {
-      if (event.error === "NETWORK_FAILED") {
-        status = "Failed - Network error";
-      } else {
-        status = "Canceled";
-      }
+      status = event.error === "NETWORK_FAILED" ? "Failed - Network error" : "Canceled";
       buttons = Template.button("primary", "retry", "Retry");
     } else {
       if (event.paused) {
         status = "Paused";
         progressClass = "paused";
-        buttons = Template.button("primary", "resume", "Resume");
-        buttons += Template.button("secondary", "cancel", "Cancel");
+        buttons = Template.button("primary", "resume", "Resume") + Template.button("secondary", "cancel", "Cancel");
       } else {
         status = "";
         progressClass = "in-progress";
-        buttons = Template.button("primary", "pause", "Pause");
-        buttons += Template.button("secondary", "cancel", "Cancel");
+        buttons = Template.button("primary", "pause", "Pause") + Template.button("secondary", "cancel", "Cancel");
       }
       progressWidth = ((100 * event.bytesReceived) / event.totalBytes).toFixed(1) + "%";
     }
 
-    const canceledClass = event.state === "interrupted" ? "canceled" : "";
-    const removedClass = !event.exists ? "removed" : "";
-    let extraClass = ["download", removedClass, canceledClass, progressClass];
-
-    if (this.isDangerous(event)) {
-      extraClass.push("danger");
-    }
+    const extraClass = [
+      "download",
+      !event.exists ? "removed" : "",
+      event.state === "interrupted" ? "canceled" : "",
+      progressClass,
+      this.isDangerous(event) ? "danger" : ""
+    ].join(" ").trim();
 
     const fileName = this.getProperFilename(event.filename);
     const fileUrl = event.finalUrl;
 
-    const defaultFileIcon = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzEl...`;
+    const defaultFileIcon = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T[...`;
+
     if (fileName) {
-      chrome.downloads.getFileIcon(event.id, { size: 32 }, iconURL =>
-        iconURL ? ($(`#icon-${event.id}`).src = iconURL) : false
-      );
+      chrome.downloads.getFileIcon(event.id, { size: 32 }, iconURL => {
+        if (iconURL) {
+          $(`#icon-${event.id}`).src = iconURL;
+        }
+      });
     }
 
-    return `<div id="download-${event.id}" class="list__item ${extraClass
-      .join(" ")
-      .replace(/\s\s+/g, " ")
-      .trim()}" data-id="${event.id}">
+    return `<div id="download-${event.id}" class="list__item ${extraClass}" data-id="${event.id}">
       <div class="list__item__icon">
         <img id="icon-${event.id}" src="${defaultFileIcon}">
       </div>
       <div class="list__item__content">
       ${
-        event.state != "complete" || !event.exists
+        event.state !== "complete" || !event.exists
           ? `<p class="list__item__filename" title="${fileName}">${fileName}</p>`
           : `<a href="file://${event.filename}" class="list__item__filename" data-action="open" title="${fileName}">${fileName}</a>`
       }
       <a href="${fileUrl}" class="list__item__source" data-action="url" title="${fileUrl}">${fileUrl}</a>
       ${
-        extraClass.includes("in-progress")
+        progressClass === "in-progress"
           ? `<div class="progress"><div class="progress__bar" style="width: ${progressWidth};"></div></div>`
           : ""
       }
@@ -215,28 +208,27 @@ const App = {
   },
   clearAllDownloadsExceptRunning: function(callback) {
     chrome.downloads.search({}, results => {
-      const running = results.map(item => {
-        if (item.state == "in_progress") return true;
-        chrome.downloads.erase({
-          id: item.id
-        });
+      const running = results.filter(item => item.state === "in_progress");
+      results.forEach(item => {
+        if (item.state !== "in_progress") {
+          chrome.downloads.erase({ id: item.id });
+        }
       });
       callback && callback(running);
     });
   },
   handleClick: function(event) {
     const action = event.target.dataset.action;
-
     if (!action) return;
 
     event.preventDefault();
 
-    if (/url/.test(action)) {
+    if (action === "url") {
       this.openUrl(event.target.href);
       return;
     }
 
-    if (/more/.test(action)) {
+    if (action === "more") {
       this.openUrl("chrome://downloads");
       return;
     }
@@ -244,44 +236,30 @@ const App = {
     const $el = event.target.closest(".download");
     const id = +$el.dataset.id;
 
-    if (/resume|cancel|pause/.test(action)) {
+    if (["resume", "cancel", "pause"].includes(action)) {
       chrome.downloads[action](id);
       this.refreshDownloadView(id);
-
-      if (/resume/.test(action)) {
+      if (action === "resume") {
         this.startTimer(id);
       } else {
         this.stopTimer(id);
       }
-    } else if (/retry/.test(action)) {
+    } else if (action === "retry") {
       chrome.downloads.search({ id: id }, results => {
         chrome.downloads.download({ url: results[0].url }, new_id => {
           this.startTimer(new_id);
         });
       });
-    } else if (/erase/.test(action)) {
-      chrome.downloads.search(
-        {
-          limit: this.resultsLimit,
-          filenameRegex: ".+",
-          orderBy: ["-startTime"]
-        },
-        results => {
-          const $list = $el.parentNode;
-          $list.removeChild($el);
-
-          const new_item = results[this.resultsLimit];
-          if (!new_item) return;
-          const $newEl = this.elementFromHtml(this.getDownloadView(new_item));
-          $list.appendChild($newEl);
-        }
-      );
-      chrome.downloads.erase({ id: id }, this.render.bind(this));
-    } else if (/show/.test(action)) {
+    } else if (action === "erase") {
+      chrome.downloads.erase({ id: id }, () => {
+        const $list = $el.parentNode;
+        $list.removeChild($el);
+        this.render();
+      });
+    } else if (action === "show") {
       chrome.downloads.show(id);
-    } else if (/open/.test(action)) {
+    } else if (action === "open") {
       chrome.downloads.open(id);
-      return;
     }
   },
   startTimer: function(id) {
@@ -291,27 +269,27 @@ const App = {
     let progressCurrentValue = 0;
     let progressNextValue = 0;
     let progressRemainingTime = 0;
-    let progressLastFrame = +new Date();
+    let progressLastFrame = Date.now();
 
     const timer = () => {
       const $el = $(`#download-${id}`);
+      if (!$el) return;
+
       const $status = $el.querySelector(".status");
 
       chrome.downloads.search({ id: id }, results => {
         const event = results[0];
-
         if (!event) {
           this.stopTimer(id);
           this.render();
           return;
         }
 
-        if (event.state != "complete") {
+        if (event.state !== "complete") {
           let speed = 0;
           let left_text = "";
           const remainingBytes = event.totalBytes - event.bytesReceived;
-          const remainingSeconds =
-            (new Date(event.estimatedEndTime) - new Date()) / 1000;
+          const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
 
           speed = remainingBytes / remainingSeconds;
 
@@ -322,8 +300,7 @@ const App = {
           if (progressCurrentValue === 0) {
             if (speed) {
               progressCurrentValue = event.bytesReceived / event.totalBytes;
-              progressNextValue =
-                (event.bytesReceived + speed) / event.totalBytes;
+              progressNextValue = (event.bytesReceived + speed) / event.totalBytes;
               progressLastValue = progressCurrentValue;
               progressRemainingTime += 1000;
             }
@@ -335,9 +312,7 @@ const App = {
             progressRemainingTime += 1000;
           }
 
-          $status.innerHTML = `${Format.toByte(speed)}/s - ${Format.toByte(
-            event.bytesReceived
-          )} of ${Format.toByte(event.totalBytes)}${left_text}`;
+          $status.innerHTML = `${Format.toByte(speed)}/s - ${Format.toByte(event.bytesReceived)} of ${Format.toByte(event.totalBytes)}${left_text}`;
 
           if (event.bytesReceived && event.bytesReceived === event.totalBytes) {
             $status.innerHTML = Format.toByte(event.totalBytes);
@@ -359,14 +334,13 @@ const App = {
 
       const $progress = $el.querySelector(".progress__bar");
 
-      const now = +new Date();
+      const now = Date.now();
       const elapsed = now - progressLastFrame;
       const remainingProgress = progressNextValue - progressCurrentValue;
       progressLastFrame = now;
 
       if (progressRemainingTime > 0 && remainingProgress > 0) {
-        progressCurrentValue +=
-          (elapsed / progressRemainingTime) * remainingProgress;
+        progressCurrentValue += (elapsed / progressRemainingTime) * remainingProgress;
         progressRemainingTime -= elapsed;
 
         if ($progress) {
@@ -375,11 +349,11 @@ const App = {
       }
 
       if (this.timers[id]) {
-        window.requestAnimationFrame(progressAnimationFrame);
+        requestAnimationFrame(progressAnimationFrame);
       }
     };
 
-    window.requestAnimationFrame(progressAnimationFrame);
+    requestAnimationFrame(progressAnimationFrame);
   },
   stopTimer: function(id) {
     clearInterval(this.timers[id]);
@@ -393,8 +367,7 @@ const App = {
   getProperFilename: function(filename) {
     const backArray = filename.split("\\");
     const forwardArray = filename.split("/");
-    const array =
-      backArray.length > forwardArray.length ? backArray : forwardArray;
+    const array = backArray.length > forwardArray.length ? backArray : forwardArray;
     return array.pop().replace(/.crdownload$/, "");
   },
   isDangerous: function(event) {
