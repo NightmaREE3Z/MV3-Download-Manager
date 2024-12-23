@@ -88,15 +88,15 @@ chrome.downloads.onChanged.addListener(delta => {
 });
 
 function flashIcon() {
-  // Change the icon to icon32.png
-  chrome.action.setIcon({ path: "img/icons/icon32.png" }, () => {
+  // Change the icon to icon48.png
+  chrome.action.setIcon({ path: "img/icons/icon48.png" }, () => {
     if (chrome.runtime.lastError) {
       console.error("Failed to set icon:", chrome.runtime.lastError.message);
       return;
     }
-    // Restore the icon to icon48.png after a short delay
+    // Restore the icon to icon128.png after a short delay
     setTimeout(() => {
-      chrome.action.setIcon({ path: "img/icons/icon48.png" }, () => {
+      chrome.action.setIcon({ path: "img/icons/icon128.png" }, () => {
         if (chrome.runtime.lastError) {
           console.error("Failed to set icon:", chrome.runtime.lastError.message);
         }

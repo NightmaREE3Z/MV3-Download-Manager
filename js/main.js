@@ -45,12 +45,15 @@ const App = {
     });
 
     chrome.runtime.onMessage.addListener((message) => {
-      if (message.type === "download_created") {
-        chrome.runtime.sendMessage({ type: "show_gizmo" });
-        this.handleDownloadCreated(message.data);
-      } else if (message.type === "download_changed") {
-        chrome.runtime.sendMessage({ type: "show_gizmo" });
-        this.handleDownloadChanged(message.data);
+  if (message.type === "download_created") {
+    // Handle download created message
+  } else if (message.type === "download_changed") {
+    // Handle download changed message
+  }
+  
+  // Optionally send a response
+  sendResponse({ status: "Message received in popup" });
+});
       }
     });
 
