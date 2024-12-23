@@ -117,8 +117,8 @@ function refreshToolbarIcon(items) {
     estimatedEndTime: 0
   };
   items.forEach(item => {
-    estimatedEndTime = new Date(item.estimatedEndTime);
-    longestEndTime = new Date(longestItem.estimatedEndTime);
+    const estimatedEndTime = new Date(item.estimatedEndTime);
+    const longestEndTime = new Date(longestItem.estimatedEndTime);
     if (estimatedEndTime > longestEndTime) {
       longestItem = item;
     }
@@ -147,9 +147,7 @@ function sendMessageToActiveTab(message) {
   });
 }
 
-let canvas = document.createElement("canvas");
-canvas.width = 38;
-canvas.height = 38;
+let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext("2d");
 const scale = window.devicePixelRatio < 2 ? 0.5 : 1;
 const size = 38 * scale;
