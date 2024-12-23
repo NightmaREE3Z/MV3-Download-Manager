@@ -28,7 +28,7 @@ function showGizmo() {
   if (!x && !y) return;
 
   const $img = document.createElement("img");
-  $img.src = chrome.runtime.getURL("img/icons/icon-48x48.png");
+  $img.src = chrome.runtime.getURL("img/icons/icon48.png");
   $img.style.cssText =
     "width:48px;height:48px;position:fixed;opacity:1;z-index:999999;";
   $img.style.left = x - 24 + "px";
@@ -39,7 +39,7 @@ function showGizmo() {
     const duration = calcDuration(
       distance(x - 48, y - 48, window.innerWidth - 48, -48)
     );
-    $img.style.webkitTransition = "all " + duration + "s";
+    $img.style.transition = "all " + duration + "s";
     $img.style.left = window.innerWidth - 60 + "px";
     $img.style.top = -48 + "px";
     $img.style.opacity = 0.5;
