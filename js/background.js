@@ -1,5 +1,3 @@
-// background.js
-
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed and background script running.");
   chrome.downloads.setShelfEnabled(false);
@@ -56,11 +54,15 @@ function handleDownload(downloadItem) {
     }
   });
 
-  chrome.runtime.sendMessage({ type: "download_created", data: downloadItem }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.warn("Error sending message:", chrome.runtime.lastError.message);
-    }
-  });
+  try {
+    chrome.runtime.sendMessage({ type: "download_created", data: downloadItem }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn("Error sending message:", chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.error("Failed to send message:", error);
+  }
 }
 
 chrome.downloads.onChanged.addListener(delta => {
@@ -72,21 +74,33 @@ chrome.downloads.onChanged.addListener(delta => {
   }
 
   // Sends a message to other parts of the extension about download updates
-  if (delta.filename || delta.danger) {
-    chrome.runtime.sendMessage({ type: "download_changed", data: delta }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn("Error sending message:", chrome.runtime.lastError.message);
-      }
-    });
+  try {
+    if (delta.filename || delta.danger) {
+      chrome.runtime.sendMessage({ type: "download_changed", data: delta }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn("Error sending message:", chrome.runtime.lastError.message);
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Failed to send message:", error);
   }
 });
 
 function flashIcon() {
   // Change the icon to icon32.png
   chrome.action.setIcon({ path: "img/icons/icon32.png" }, () => {
+    if (chrome.runtime.lastError) {
+      console.error("Failed to set icon:", chrome.runtime.lastError.message);
+      return;
+    }
     // Restore the icon to icon48.png after a short delay
     setTimeout(() => {
-      chrome.action.setIcon({ path: "img/icons/icon48.png" });
+      chrome.action.setIcon({ path: "img/icons/icon48.png" }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("Failed to set icon:", chrome.runtime.lastError.message);
+        }
+      });
     }, 1000); // Change back after 1 second
   });
 }
