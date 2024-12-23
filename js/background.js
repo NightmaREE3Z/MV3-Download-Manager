@@ -149,12 +149,12 @@ function sendMessageToActiveTab(message) {
 
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext("2d");
-const scale = window.devicePixelRatio < 2 ? 0.5 : 1;
+const scale = 2;
 const size = 38 * scale;
 ctx.scale(scale, scale);
 
 function getColor(state) {
-  const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = false; // Assuming a static color scheme since we can't use matchMedia in service workers
   let colorLight = "#dddddd";
   let colorDark = "#666666";
 
