@@ -1,56 +1,42 @@
-let port = null;
-let isPopupOpen = false;
-
-// Set up initial background behaviors
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed and background script running.");
   chrome.downloads.setShelfEnabled(false);
+
+  // Set the initial default icon
   chrome.action.setIcon({ path: chrome.runtime.getURL("icons/iconblue.png") });
 });
 
-// Ensure downloads shelf is disabled on startup
 chrome.runtime.onStartup.addListener(() => {
   chrome.downloads.setShelfEnabled(false); // Ensure this runs on every browser startup
 });
 
-// Handle connection from popup
-chrome.runtime.onConnect.addListener((connectedPort) => {
-  console.log("Connected to popup:", connectedPort);
-  port = connectedPort;
+let animationTimer;
+let isPopupOpen = false;
 
-  // Listen for messages from the popup
-  port.onMessage.addListener((message) => {
-    console.log("Message received from popup:", message);
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Message received in background script:", message);
 
-    if (message.type === "popup_open") {
-      isPopupOpen = true;
-      console.log("Popup opened");
-      port.postMessage({ status: "Popup opened successfully!" });
-    } else if (message.type === "popup_close") {
-      isPopupOpen = false;
-      console.log("Popup closed");
-      port.postMessage({ status: "Popup closed" });
-    }
-  });
-
-  // Handle disconnection from the popup
-  port.onDisconnect.addListener(() => {
-    console.log("Popup disconnected");
+  if (message.type === "popup_open") {
+    isPopupOpen = true;
+    sendResponse({ status: "Popup opened successfully!" });
+  } else if (message.type === "popup_close") {
     isPopupOpen = false;
-    port = null;
-  });
+    sendResponse({ status: "Popup closed" });
+  } else {
+    console.warn("Unhandled message type:", message.type);
+  }
+
+  // Keeps the service worker alive until `sendResponse` is called
+  return true;
 });
 
-// Listen for changes in downloads
 chrome.downloads.onCreated.addListener(downloadItem => {
   console.log("Download created:", downloadItem);
-  chrome.downloads.setShelfEnabled(false); // Disable the native shelf for new downloads
-  flashIcon("inProgress"); // Set the icon to yellow for download in progress
 
-  // Optionally, notify popup about the new download
-  if (isPopupOpen && port) {
-    port.postMessage({ type: "download_created", data: downloadItem });
-  }
+  // Block the native shelf for new downloads
+  chrome.downloads.setShelfEnabled(false);
+
+  flashIcon("inProgress"); // Set the icon to yellow for download in progress
 });
 
 chrome.downloads.onChanged.addListener(delta => {
@@ -58,21 +44,34 @@ chrome.downloads.onChanged.addListener(delta => {
 
   if (delta.state) {
     if (delta.state.current === "complete") {
-      flashIcon("finished"); // Change icon to green when download finishes
+      flashIcon("finished");
     } else if (delta.state.current === "interrupted" || delta.state.current === "cancelled") {
-      flashIcon("default"); // Change icon to blue when download is interrupted or cancelled
+      flashIcon("default");
     }
   }
 
-  // Optionally, send update to the popup if it's open
-  if (isPopupOpen && port) {
-    port.postMessage({ type: "download_changed", data: delta });
+  if (delta.bytesReceived && delta.totalBytes) {
+    const progress = delta.bytesReceived.current / delta.totalBytes.current;
+    console.log(`Progress: ${progress * 100}%`); // Log the progress
+    drawToolbarProgressIcon(progress);
+  }
+
+  try {
+    if (delta.filename || delta.danger) {
+      chrome.runtime.sendMessage({ type: "download_changed", data: delta }, response => {
+        if (chrome.runtime.lastError) {
+          console.warn("Error sending message:", chrome.runtime.lastError.message);
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Failed to send message:", error);
   }
 });
 
 chrome.downloads.onErased.addListener(downloadId => {
   console.log("Download erased:", downloadId);
-  flashIcon("default"); // Reset icon to blue when the download is erased
+  flashIcon("default");
 });
 
 function flashIcon(state) {
@@ -88,5 +87,44 @@ function flashIcon(state) {
 
   console.log(`Setting icon to ${iconPath}`);
   chrome.action.setIcon({ path: chrome.runtime.getURL(iconPath) });
+
+  // Clear animation if any
+  if (animationTimer) {
+    clearInterval(animationTimer);
+    animationTimer = null;
+  }
 }
 
+// Function to draw the toolbar icon with a progress bar
+function drawToolbarProgressIcon(progress) {
+  const canvas = document.createElement('canvas');
+  const size = 38;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Ensure the base icon is fully loaded before drawing the progress bar
+  const img = new Image();
+  img.src = chrome.runtime.getURL('icons/iconyellow.png');
+  img.onload = () => {
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(img, 0, 0, size, size);
+
+    // Draw the progress bar
+    ctx.fillStyle = 'green';
+    ctx.fillRect(0, size - 4, size * progress, 4);
+
+    // Verify the drawing by logging the image data
+    const imageData = ctx.getImageData(0, 0, size, size);
+    console.log(`ImageData width: ${imageData.width}, height: ${imageData.height}`);
+
+    // Set the icon
+    chrome.action.setIcon({
+      imageData: imageData
+    });
+  };
+
+  img.onerror = (err) => {
+    console.error('Failed to load icon image', err);
+  };
+}
