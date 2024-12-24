@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "popup_open") {
     isPopupOpen = true;
     unseen = [];
-    refresh();
+    refresh();  // Added the refresh function to avoid errors
     sendInvalidateGizmo();
     sendResponse({ status: "Popup opened" });
   }
@@ -38,7 +38,7 @@ chrome.downloads.onCreated.addListener(downloadItem => {
 });
 
 function handleDownload(downloadItem) {
-  flashIcon();
+  flashIcon("inProgress");
 
   chrome.downloads.download({ url: downloadItem.url }, newDownloadId => {
     if (chrome.runtime.lastError) {
@@ -63,7 +63,7 @@ chrome.downloads.onChanged.addListener(delta => {
   console.log("Download changed:", delta);
 
   if (delta.state && delta.state.current === "complete") {
-    flashIcon(); // Flash icon when download completes
+    flashIcon("finished");
   }
 
   try {
@@ -79,27 +79,25 @@ chrome.downloads.onChanged.addListener(delta => {
   }
 });
 
-function flashIcon() {
-  console.log("Attempting to set icon to icons/icon_download_in_progress.png");
+function flashIcon(state) {
+  let iconPath = "";
 
-  chrome.action.setIcon({ path: "icons/icon_download_in_progress.png" }, () => {
+  if (state === "inProgress") {
+    iconPath = "icons/icon_download_in_progress.png"; // Fixed file path
+  } else if (state === "finished") {
+    iconPath = "icons/icon_download_finished.png"; // Fixed file path
+  }
+
+  console.log(`Attempting to set icon to ${iconPath}`);
+
+  chrome.action.setIcon({ path: iconPath }, () => {
     if (chrome.runtime.lastError) {
       console.error("Failed to set icon:", chrome.runtime.lastError.message);
-      return;
     }
-
-    console.log("Icon set to icons/icon_download_in_progress.png successfully");
-
-    setTimeout(() => {
-      console.log("Attempting to set icon to icons/icon_download_finished.png");
-      chrome.action.setIcon({ path: "icons/icon_download_finished.png" }, () => {
-        if (chrome.runtime.lastError) {
-          console.error("Failed to set icon:", chrome.runtime.lastError.message);
-          return;
-        }
-
-        console.log("Icon set to icons/icon_download_finished.png successfully");
-      });
-    }, 2000); // Change icon after 2 seconds (adjust as needed)
   });
+}
+
+function refresh() {
+  // Add functionality for refreshing UI if needed.
+  console.log("Refreshing UI or resetting state");
 }

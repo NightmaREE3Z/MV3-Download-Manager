@@ -40,6 +40,36 @@ const App = {
     this.render();
   },
   bindEvents: function() {
+    // DOMContentLoaded event listener
+    document.addEventListener("DOMContentLoaded", function () {
+      // Your initialization code for the popup here
+      console.log("Popup loaded and ready!");
+
+      // Example event listeners for the buttons
+      document.getElementById("action-show-all").addEventListener("click", function () {
+        console.log("Show all downloads clicked");
+        // Handle show all downloads action
+      });
+
+      document.getElementById("action-clear-all").addEventListener("click", function () {
+        console.log("Clear all downloads clicked");
+        // Handle clear all downloads action
+      });
+    });
+
+    // Listener for download changes
+    chrome.downloads.onChanged.addListener(delta => {
+      if (delta.state && delta.state.current === "in_progress") {
+        document.getElementById("status").textContent = "Download in progress...";
+        document.getElementById("downloadIcon").src = "icons/icon_download_in_progress.png"; // Use in-progress icon
+      }
+
+      if (delta.state && delta.state.current === "complete") {
+        document.getElementById("status").textContent = "Download complete!";
+        document.getElementById("downloadIcon").src = "icons/icon_download_finished.png";  // Use finished icon
+      }
+    });
+
     window.on("DOMContentLoaded", () => {
       chrome.runtime.sendMessage({ type: "popup_open" });
     });
