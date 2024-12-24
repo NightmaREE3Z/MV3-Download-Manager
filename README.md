@@ -12,7 +12,7 @@ A simple, yet effective download manager extension for your browser, built using
 
 ### Installation:
 1. **Chrome Web Store (coming soon)**: 
-   - The extension will be available for download soon on the Chrome Web Store.
+   - The extension will be available for download soon on the Chrome Web Store, maybe.
    
 2. **Install from GitHub (manual):**
    - Clone this repository and load it as an unpacked extension:
