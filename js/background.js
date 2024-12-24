@@ -20,24 +20,107 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ status: "Popup opened" });
   }
 
-  // Keep service worker alive until `sendResponse` is called
+  // Keeps the service worker alive until `sendResponse` is called
   return true;
 });
 
-function sendInvalidateGizmo() {
-  // Make sure the popup exists before sending a message
-  if (isPopupOpen) {
-    try {
-      chrome.runtime.sendMessage({ type: "invalidate_gizmo" }, response => {
+chrome.downloads.onCreated.addListener(downloadItem => {
+  console.log("Download created:", downloadItem);
+
+  chrome.downloads.search({ url: downloadItem.url }, results => {
+    if (results.length > 1) {
+      console.log("Download already being handled:", downloadItem.url);
+      return;
+    }
+
+    chrome.downloads.cancel(downloadItem.id, () => {
+      handleDownload(downloadItem);
+    });
+  });
+});
+
+function handleDownload(downloadItem) {
+  flashIcon();
+
+  chrome.downloads.download({ url: downloadItem.url }, newDownloadId => {
+    if (chrome.runtime.lastError) {
+      console.warn("Error initiating download:", chrome.runtime.lastError.message);
+    } else {
+      console.log("Download initiated with ID:", newDownloadId);
+    }
+  });
+
+  try {
+    chrome.runtime.sendMessage({ type: "download_created", data: downloadItem }, response => {
+      if (chrome.runtime.lastError) {
+        console.warn("Error sending message:", chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.error("Failed to send message:", error);
+  }
+}
+
+chrome.downloads.onChanged.addListener(delta => {
+  console.log("Download changed:", delta);
+
+  if (delta.state && delta.state.current === "complete") {
+    flashIcon();
+  }
+
+  try {
+    if (delta.filename || delta.danger) {
+      chrome.runtime.sendMessage({ type: "download_changed", data: delta }, response => {
         if (chrome.runtime.lastError) {
           console.warn("Error sending message:", chrome.runtime.lastError.message);
         }
       });
-    } catch (error) {
-      console.error("Failed to send message:", error);
     }
-  } else {
-    console.log("Popup is not open. Skipping message send.");
+  } catch (error) {
+    console.error("Failed to send message:", error);
   }
+});
+
+// Function to check if the icon is available before setting it
+function isIconAvailable(path) {
+  fetch(path)
+    .then(response => {
+      if (response.ok) {
+        console.log(`${path} is available`);
+        chrome.action.setIcon({ path: path });
+      } else {
+        console.error(`${path} is not available. Response status: ${response.status}`);
+      }
+    })
+    .catch(error => {
+      console.error(`Error fetching ${path}:`, error);
+    });
 }
 
+// Check if the icon is available before setting it
+isIconAvailable("icons/icon48.png");
+
+// Flash the icon
+function flashIcon() {
+  console.log("Attempting to set icon to icons/icon48.png");
+
+  chrome.action.setIcon({ path: "icons/icon48.png" }, () => {
+    if (chrome.runtime.lastError) {
+      console.error("Failed to set icon:", chrome.runtime.lastError.message);
+      return;
+    }
+
+    console.log("Icon set to icons/icon48.png successfully");
+
+    setTimeout(() => {
+      console.log("Attempting to set icon to icons/icon128.png");
+      chrome.action.setIcon({ path: "icons/icon128.png" }, () => {
+        if (chrome.runtime.lastError) {
+          console.error("Failed to set icon:", chrome.runtime.lastError.message);
+          return;
+        }
+        console.log("Icon set to icons/icon128.png successfully");
+      });
+    }, 500);
+  });
+}

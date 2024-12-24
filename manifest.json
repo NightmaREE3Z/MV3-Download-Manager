@@ -28,9 +28,7 @@
     "downloads.shelf",
     "storage"
   ],
-  "host_permissions": [
-    "*://*/*"
-  ],
+  "host_permissions": ["*://*/*"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
