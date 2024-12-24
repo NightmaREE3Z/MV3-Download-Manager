@@ -61,12 +61,12 @@ const App = {
     chrome.downloads.onChanged.addListener(delta => {
       if (delta.state && delta.state.current === "in_progress") {
         document.getElementById("status").textContent = "Download in progress...";
-        document.getElementById("downloadIcon").src = "icons/icon_download_in_progress.png"; // Use in-progress icon
+        document.getElementById("downloadIcon").src = "icons/iconyellow.png"; // Use in-progress icon
       }
 
       if (delta.state && delta.state.current === "complete") {
         document.getElementById("status").textContent = "Download complete!";
-        document.getElementById("downloadIcon").src = "icons/icon_download_finished.png";  // Use finished icon
+        document.getElementById("downloadIcon").src = "icons/icongreen.png";  // Use finished icon
       }
     });
 

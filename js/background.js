@@ -1,11 +1,12 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed and background script running.");
   chrome.downloads.setShelfEnabled(false);
+
+  // Set the initial default icon (iconblue.png)
+  chrome.action.setIcon({ path: chrome.runtime.getURL("icons/iconblue.png") });
 });
 
-let isPopupOpen = false;
-let unseen = [];
-let timer;
+let animationTimer;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Message received in background script:", message);
@@ -13,7 +14,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "popup_open") {
     isPopupOpen = true;
     unseen = [];
-    refresh();  // Added the refresh function to avoid errors
+    refresh();
     sendInvalidateGizmo();
     sendResponse({ status: "Popup opened" });
   }
@@ -81,23 +82,42 @@ chrome.downloads.onChanged.addListener(delta => {
 
 function flashIcon(state) {
   let iconPath = "";
+  let iconFrames = [];
 
   if (state === "inProgress") {
-    iconPath = "icons/icon_download_in_progress.png"; // Fixed file path
+    iconFrames = [
+      "icons/iconyellow.png" // Updated icon for download in progress
+    ];
   } else if (state === "finished") {
-    iconPath = "icons/icon_download_finished.png"; // Fixed file path
+    iconPath = "icons/icongreen.png"; // Updated icon for download finished
   }
 
   console.log(`Attempting to set icon to ${iconPath}`);
 
-  chrome.action.setIcon({ path: iconPath }, () => {
-    if (chrome.runtime.lastError) {
-      console.error("Failed to set icon:", chrome.runtime.lastError.message);
-    }
-  });
+  if (iconFrames.length > 0) {
+    let currentFrame = 0;
+
+    // Clear any previous animation
+    clearInterval(animationTimer);
+
+    // Set the initial icon
+    chrome.action.setIcon({ path: chrome.runtime.getURL(iconFrames[currentFrame]) });
+
+    // Cycle through the frames every 200ms (or adjust the speed as necessary)
+    animationTimer = setInterval(() => {
+      currentFrame = (currentFrame + 1) % iconFrames.length;
+      chrome.action.setIcon({ path: chrome.runtime.getURL(iconFrames[currentFrame]) });
+    }, 200); // Adjust the timing to control animation speed
+  } else if (iconPath) {
+    // If no animation, just set the final icon
+    chrome.action.setIcon({ path: chrome.runtime.getURL(iconPath) });
+  }
 }
 
 function refresh() {
-  // Add functionality for refreshing UI if needed.
   console.log("Refreshing UI or resetting state");
+}
+
+function sendInvalidateGizmo() {
+  console.log("Invalidate gizmo");
 }
