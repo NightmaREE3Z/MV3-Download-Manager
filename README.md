@@ -1,5 +1,3 @@
-MV3 Download Manager
-Description
 A simple, yet effective download manager extension for your browser, built using Manifest V3 (MV3). The extension provides a clean, modern interface to manage your downloads with the following features:
 
 Lightweight and easy to use for everyday download tasks.
