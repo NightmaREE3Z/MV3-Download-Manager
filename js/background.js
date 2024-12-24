@@ -2,21 +2,28 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Extension installed and background script running.");
   chrome.downloads.setShelfEnabled(false);
 
-  // Set the initial default icon (iconblue.png)
+  // Set the initial default icon
   chrome.action.setIcon({ path: chrome.runtime.getURL("icons/iconblue.png") });
 });
 
+chrome.runtime.onStartup.addListener(() => {
+  chrome.downloads.setShelfEnabled(false); // Ensure this runs on every browser startup
+});
+
 let animationTimer;
+let isPopupOpen = false;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Message received in background script:", message);
 
   if (message.type === "popup_open") {
     isPopupOpen = true;
-    unseen = [];
-    refresh();
-    sendInvalidateGizmo();
-    sendResponse({ status: "Popup opened" });
+    sendResponse({ status: "Popup opened successfully!" });
+  } else if (message.type === "popup_close") {
+    isPopupOpen = false;
+    sendResponse({ status: "Popup closed" });
+  } else {
+    console.warn("Unhandled message type:", message.type);
   }
 
   // Keeps the service worker alive until `sendResponse` is called
@@ -25,6 +32,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.downloads.onCreated.addListener(downloadItem => {
   console.log("Download created:", downloadItem);
+
+  // Block the native shelf for new downloads
+  chrome.downloads.setShelfEnabled(false);
+
+  flashIcon("inProgress"); // Immediately set the icon to yellow for download in progress
 
   chrome.downloads.search({ url: downloadItem.url }, results => {
     if (results.length > 1) {
@@ -39,8 +51,6 @@ chrome.downloads.onCreated.addListener(downloadItem => {
 });
 
 function handleDownload(downloadItem) {
-  flashIcon("inProgress");
-
   chrome.downloads.download({ url: downloadItem.url }, newDownloadId => {
     if (chrome.runtime.lastError) {
       console.warn("Error initiating download:", chrome.runtime.lastError.message);
@@ -63,8 +73,12 @@ function handleDownload(downloadItem) {
 chrome.downloads.onChanged.addListener(delta => {
   console.log("Download changed:", delta);
 
-  if (delta.state && delta.state.current === "complete") {
-    flashIcon("finished");
+  if (delta.state) {
+    if (delta.state.current === "complete") {
+      flashIcon("finished");
+    } else if (delta.state.current === "interrupted" || delta.state.current === "cancelled") {
+      flashIcon("default");
+    }
   }
 
   try {
@@ -80,44 +94,28 @@ chrome.downloads.onChanged.addListener(delta => {
   }
 });
 
+chrome.downloads.onErased.addListener(downloadId => {
+  console.log("Download erased:", downloadId);
+  flashIcon("default");
+});
+
 function flashIcon(state) {
   let iconPath = "";
-  let iconFrames = [];
 
   if (state === "inProgress") {
-    iconFrames = [
-      "icons/iconyellow.png" // Updated icon for download in progress
-    ];
+    iconPath = "icons/iconyellow.png"; // Icon for download in progress
   } else if (state === "finished") {
-    iconPath = "icons/icongreen.png"; // Updated icon for download finished
+    iconPath = "icons/icongreen.png"; // Icon for download finished
+  } else {
+    iconPath = "icons/iconblue.png"; // Default icon
   }
 
-  console.log(`Attempting to set icon to ${iconPath}`);
+  console.log(`Setting icon to ${iconPath}`);
+  chrome.action.setIcon({ path: chrome.runtime.getURL(iconPath) });
 
-  if (iconFrames.length > 0) {
-    let currentFrame = 0;
-
-    // Clear any previous animation
+  // Clear animation if any
+  if (animationTimer) {
     clearInterval(animationTimer);
-
-    // Set the initial icon
-    chrome.action.setIcon({ path: chrome.runtime.getURL(iconFrames[currentFrame]) });
-
-    // Cycle through the frames every 200ms (or adjust the speed as necessary)
-    animationTimer = setInterval(() => {
-      currentFrame = (currentFrame + 1) % iconFrames.length;
-      chrome.action.setIcon({ path: chrome.runtime.getURL(iconFrames[currentFrame]) });
-    }, 200); // Adjust the timing to control animation speed
-  } else if (iconPath) {
-    // If no animation, just set the final icon
-    chrome.action.setIcon({ path: chrome.runtime.getURL(iconPath) });
+    animationTimer = null;
   }
-}
-
-function refresh() {
-  console.log("Refreshing UI or resetting state");
-}
-
-function sendInvalidateGizmo() {
-  console.log("Invalidate gizmo");
 }

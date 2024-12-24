@@ -28,7 +28,9 @@
     "downloads.shelf",
     "storage"
   ],
-  "host_permissions": ["*://*/*"],
+  "host_permissions": [
+    "*://*/*"
+  ],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
@@ -38,9 +40,11 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/iconblue.png",
-        "icons/iconyellow.png",
-        "icons/icongreen.png"
+        "icons/icon16.png",
+        "icons/icon48.png",
+        "icons/icon128.png",
+        "icons/icongreen.png",
+        "icons/iconyellow.png"
       ],
       "matches": ["<all_urls>"]
     }
