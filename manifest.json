@@ -9,17 +9,17 @@
   },
   "action": {
     "default_icon": {
-      "16": "img/icons/icon16.png",
-      "48": "img/icons/icon48.png",
-      "128": "img/icons/icon128.png"
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
     },
     "default_popup": "popup.html",
     "default_title": "Downloads"
   },
   "icons": {
-    "16": "img/icons/icon16.png",
-    "48": "img/icons/icon48.png",
-    "128": "img/icons/icon128.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "permissions": [
     "activeTab",
@@ -39,11 +39,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "img/icons/icon16.png",
-        "img/icons/icon48.png",
-        "img/icons/icon128.png"
-      ],
+      "resources": ["icons/icon16.png"],
       "matches": ["<all_urls>"]
     }
   ]

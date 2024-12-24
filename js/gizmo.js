@@ -28,7 +28,7 @@ function showGizmo() {
   if (!x && !y) return;
 
   const $img = document.createElement("img");
-  $img.src = chrome.runtime.getURL("img/icons/icon48.png");
+  $img.src = chrome.runtime.getURL("icons/icon48.png");
   $img.style.cssText =
     "width:48px;height:48px;position:fixed;opacity:1;z-index:999999;";
   $img.style.left = x - 24 + "px";
