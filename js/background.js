@@ -36,49 +36,22 @@ chrome.downloads.onCreated.addListener(downloadItem => {
   // Block the native shelf for new downloads
   chrome.downloads.setShelfEnabled(false);
 
-  flashIcon("inProgress"); // Immediately set the icon to yellow for download in progress
-
-  chrome.downloads.search({ url: downloadItem.url }, results => {
-    if (results.length > 1) {
-      console.log("Download already being handled:", downloadItem.url);
-      return;
-    }
-
-    chrome.downloads.cancel(downloadItem.id, () => {
-      handleDownload(downloadItem);
-    });
-  });
+  flashIcon("inProgress"); // Set the icon to yellow for download in progress
 });
-
-function handleDownload(downloadItem) {
-  chrome.downloads.download({ url: downloadItem.url }, newDownloadId => {
-    if (chrome.runtime.lastError) {
-      console.warn("Error initiating download:", chrome.runtime.lastError.message);
-    } else {
-      console.log("Download initiated with ID:", newDownloadId);
-    }
-  });
-
-  try {
-    chrome.runtime.sendMessage({ type: "download_created", data: downloadItem }, response => {
-      if (chrome.runtime.lastError) {
-        console.warn("Error sending message:", chrome.runtime.lastError.message);
-      }
-    });
-  } catch (error) {
-    console.error("Failed to send message:", error);
-  }
-}
 
 chrome.downloads.onChanged.addListener(delta => {
   console.log("Download changed:", delta);
 
-  if (delta.state) {
-    if (delta.state.current === "complete") {
-      flashIcon("finished");
-    } else if (delta.state.current === "interrupted" || delta.state.current === "cancelled") {
-      flashIcon("default");
-    }
+  if (delta.state && delta.state.current === "complete") {
+    flashIcon("finished");
+  } else if (delta.state && (delta.state.current === "interrupted" || delta.state.current === "cancelled")) {
+    flashIcon("default");
+  }
+
+  if (delta.bytesReceived && delta.totalBytes) {
+    const progress = delta.bytesReceived.current / delta.totalBytes.current;
+    console.log(`Progress: ${progress * 100}%`); // Log the progress
+    drawToolbarProgressIcon(progress);
   }
 
   try {
@@ -118,4 +91,33 @@ function flashIcon(state) {
     clearInterval(animationTimer);
     animationTimer = null;
   }
+}
+
+// Function to draw the toolbar icon with a progress bar
+function drawToolbarProgressIcon(progress) {
+  const canvas = document.createElement('canvas');
+  const size = 38;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Ensure the base icon is fully loaded before drawing the progress bar
+  const img = new Image();
+  img.src = chrome.runtime.getURL('icons/iconyellow.png');
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, size, size);
+
+    // Draw the progress bar
+    ctx.fillStyle = 'green';
+    ctx.fillRect(0, size - 4, size * progress, 4);
+
+    // Set the icon
+    chrome.action.setIcon({
+      imageData: ctx.getImageData(0, 0, size, size)
+    });
+  };
+
+  img.onerror = (err) => {
+    console.error('Failed to load icon image', err);
+  };
 }
