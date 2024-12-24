@@ -23,10 +23,10 @@ Blue:
 No active downloads or cleared downloads.
 
 Yellow: 
-A download is in progress.
+Download is in progress.
 
 Green: 
-A download is complete.
+Download is complete.
 
 Acknowledgments:
 
