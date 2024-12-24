@@ -1,39 +1,36 @@
-A simple, yet effective download manager extension for your browser, built using Manifest V3 (MV3). The extension provides a clean, modern interface to manage your downloads with the following features:
+# MV3 Download Manager
 
-Lightweight and easy to use for everyday download tasks.
+### Description
+A simple, yet effective download manager extension for your browser, built using **Manifest V3 (MV3)**. The extension provides a clean, modern interface to manage your downloads with the following features:
 
-Features:
+- **Lightweight and easy to use** for everyday download tasks.
 
-Download Progress Tracking: Easily track your downloads with visual color-coded icons.
+### Features:
+- **Download Progress Tracking**: Easily track your downloads with visual color-coded icons.
+- **Seamless Integration**: Blends with your browser’s user interface.
+- **Customizable Icons**: Uses color-coded icons for each state (in-progress, completed, cleared).
 
-Seamless Integration: Blends with your browser’s user interface.
+### Installation:
+1. **Chrome Web Store (coming soon)**: 
+   - The extension will be available for download soon on the Chrome Web Store.
+   
+2. **Install from GitHub (manual):**
+   - Clone this repository and load it as an unpacked extension:
+     1. Go to `chrome://extensions/` in your browser.
+     2. Enable **Developer Mode**.
+     3. Click **Load unpacked** and select the folder where the extension files are located.
 
-Customizable Icons: Uses color-coded icons for each state (in-progress, completed, cleared).
-
-Installation:
-Chrome Web Store (coming soon, maybe):
-The extension will be available for download soon on the Chrome Web Store.
-
-Install from GitHub (manual):
-Clone this repository and load it as an unpacked extension:
-Go to chrome://extensions/ in your browser.
-Enable Developer Mode.
-Click Load unpacked and select the folder where the extension files are located.
-
-Usage:
-
+### Usage:
 Once installed, the extension will automatically start managing your downloads. The icon in your browser will change depending on the download state:
 
-Blue: No active downloads or cleared downloads.
+- **Blue**: No active downloads or cleared downloads.
+- **Yellow**: Download is in progress.
+- **Green**: Download is complete.
 
-Yellow: Download is in progress.
+### Acknowledgments:
+This extension is based on the original **Downloads Pro** extension by **Ner Karso**, which uses a progress bar to track download status. Modifications have been made to update it to Manifest V3 (MV3) and implement a different download tracking system using color-coded icons.
 
-Green: Download is complete.
+- The original extension can be found here: [Downloads Pro on Chrome Web Store](https://chromewebstore.google.com/detail/downloads-pro/lhhocifdmhogpekeppdjamkelohahbop).
 
-Acknowledgments:
-This extension is based on the original Downloads Pro extension by Ner Karso, which uses a progress bar to track download status. Modifications have been made to update it to Manifest V3 (MV3) and implement a different download tracking system using color-coded icons.
-
-The original extension by Ner Karso can be found here: [Downloads Pro on Chrome Web Store](https://chromewebstore.google.com/detail/downloads-pro/lhhocifdmhogpekeppdjamkelohahbop).
-
-License:
-The modifications made in this version are open-sourced under the MIT License.
+### License:
+The modifications made in this version are open-sourced under the **MIT License**.
