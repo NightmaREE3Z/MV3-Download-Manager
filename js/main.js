@@ -46,11 +46,12 @@ const App = {
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === "download_created") {
-        this.refreshDownloadView(message.data.id);
+        // Handle download created message
       } else if (message.type === "download_changed") {
-        this.refreshDownloadView(message.data.id);
+        // Handle download changed message
       }
 
+      // Optionally send a response
       sendResponse({ status: "Message received in popup" });
     });
 
@@ -58,7 +59,7 @@ const App = {
       if ($("#main").scrollTop > 0) {
         $(".toolbar").classList.add("toolbar--fixed");
       } else {
-        $(".toolbar").classList.remove("toolbar--fixed");
+        $("..toolbar").classList.remove("toolbar--fixed");
       }
     });
 
@@ -163,7 +164,7 @@ const App = {
     const fileName = this.getProperFilename(event.filename);
     const fileUrl = event.finalUrl;
 
-    const defaultFileIcon = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T...`;
+    const defaultFileIcon = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T`;
 
     if (fileName) {
       chrome.downloads.getFileIcon(event.id, { size: 32 }, iconURL => {
@@ -336,7 +337,7 @@ const App = {
 
       const now = Date.now();
       const elapsed = now - progressLastFrame;
-const remainingProgress = progressNextValue - progressCurrentValue;
+      const remainingProgress = progressNextValue - progressCurrentValue;
       progressLastFrame = now;
 
       if (progressRemainingTime > 0 && remainingProgress > 0) {

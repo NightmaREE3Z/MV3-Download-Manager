@@ -42,10 +42,12 @@ chrome.downloads.onCreated.addListener(downloadItem => {
 chrome.downloads.onChanged.addListener(delta => {
   console.log("Download changed:", delta);
 
-  if (delta.state && delta.state.current === "complete") {
-    flashIcon("finished");
-  } else if (delta.state && (delta.state.current === "interrupted" || delta.state.current === "cancelled")) {
-    flashIcon("default");
+  if (delta.state) {
+    if (delta.state.current === "complete") {
+      flashIcon("finished");
+    } else if (delta.state.current === "interrupted" || delta.state.current === "cancelled") {
+      flashIcon("default");
+    }
   }
 
   if (delta.bytesReceived && delta.totalBytes) {
@@ -93,27 +95,31 @@ function flashIcon(state) {
   }
 }
 
-// Function to draw the toolbar icon with a progress bar
+// Function to draw the toolbar icon with a progress bar underneath it
 function drawToolbarProgressIcon(progress) {
   const canvas = document.createElement('canvas');
   const size = 38;
+  const progressHeight = 5;  // Height of the progress bar
   canvas.width = size;
-  canvas.height = size;
+  canvas.height = size + progressHeight;  // Extend height to fit the progress bar
+
   const ctx = canvas.getContext('2d');
 
   // Ensure the base icon is fully loaded before drawing the progress bar
   const img = new Image();
   img.src = chrome.runtime.getURL('icons/iconyellow.png');
   img.onload = () => {
-    ctx.drawImage(img, 0, 0, size, size);
+    ctx.clearRect(0, 0, size, size + progressHeight);  // Clear the entire canvas area
+    ctx.drawImage(img, 0, 0, size, size);  // Draw the icon at the top
 
-    // Draw the progress bar
+    // Draw the progress bar underneath the icon
     ctx.fillStyle = 'green';
-    ctx.fillRect(0, size - 4, size * progress, 4);
+    const progressWidth = size * progress;  // Calculate width based on progress
+    ctx.fillRect(0, size, progressWidth, progressHeight);  // Draw the bar below the icon
 
-    // Set the icon
+    // Set the icon with the canvas data (not using imageData directly)
     chrome.action.setIcon({
-      imageData: ctx.getImageData(0, 0, size, size)
+      imageData: ctx.getImageData(0, 0, canvas.width, canvas.height)
     });
   };
 
