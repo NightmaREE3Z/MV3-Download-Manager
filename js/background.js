@@ -3,8 +3,6 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.downloads.setShelfEnabled(false);
 });
 
-chrome.downloads.setShelfEnabled(false);
-
 let isPopupOpen = false;
 let unseen = [];
 let timer;
@@ -65,7 +63,7 @@ chrome.downloads.onChanged.addListener(delta => {
   console.log("Download changed:", delta);
 
   if (delta.state && delta.state.current === "complete") {
-    flashIcon();
+    flashIcon(); // Flash icon when download completes
   }
 
   try {
@@ -81,46 +79,27 @@ chrome.downloads.onChanged.addListener(delta => {
   }
 });
 
-// Function to check if the icon is available before setting it
-function isIconAvailable(path) {
-  fetch(path)
-    .then(response => {
-      if (response.ok) {
-        console.log(`${path} is available`);
-        chrome.action.setIcon({ path: path });
-      } else {
-        console.error(`${path} is not available. Response status: ${response.status}`);
-      }
-    })
-    .catch(error => {
-      console.error(`Error fetching ${path}:`, error);
-    });
-}
-
-// Check if the icon is available before setting it
-isIconAvailable("icons/icon48.png");
-
-// Flash the icon
 function flashIcon() {
-  console.log("Attempting to set icon to icons/icon48.png");
+  console.log("Attempting to set icon to icons/icon_download_in_progress.png");
 
-  chrome.action.setIcon({ path: "icons/icon48.png" }, () => {
+  chrome.action.setIcon({ path: "icons/icon_download_in_progress.png" }, () => {
     if (chrome.runtime.lastError) {
       console.error("Failed to set icon:", chrome.runtime.lastError.message);
       return;
     }
 
-    console.log("Icon set to icons/icon48.png successfully");
+    console.log("Icon set to icons/icon_download_in_progress.png successfully");
 
     setTimeout(() => {
-      console.log("Attempting to set icon to icons/icon128.png");
-      chrome.action.setIcon({ path: "icons/icon128.png" }, () => {
+      console.log("Attempting to set icon to icons/icon_download_finished.png");
+      chrome.action.setIcon({ path: "icons/icon_download_finished.png" }, () => {
         if (chrome.runtime.lastError) {
           console.error("Failed to set icon:", chrome.runtime.lastError.message);
           return;
         }
-        console.log("Icon set to icons/icon128.png successfully");
+
+        console.log("Icon set to icons/icon_download_finished.png successfully");
       });
-    }, 500);
+    }, 2000); // Change icon after 2 seconds (adjust as needed)
   });
 }
