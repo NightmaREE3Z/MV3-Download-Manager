@@ -22,14 +22,9 @@
     "128": "icons/iconblue128.png"
   },
   "permissions": [
-    "activeTab",
     "downloads",
     "downloads.open",
-    "downloads.shelf",
-    "storage"
-  ],
-  "host_permissions": [
-    "*://*/*"
+    "downloads.shelf"
   ],
   "content_scripts": [
     {
