@@ -11,8 +11,8 @@ A simple, yet effective download manager extension for your browser, built using
 - **Customizable Icons**: Uses color-coded icons for each state (in-progress, completed, cleared).
 
 ### Installation:
-1. **Chrome Web Store (coming soon)**: 
-   - The extension will be available for download soon on the Chrome Web Store, maybe.
+1. **Chrome Web Store**: 
+   - The extension is available for download on the [Chrome Web Store](https://chromewebstore.google.com/detail/mv3-download-manager/oepjjkighhnkonjobaabpajgeijhngan).
    
 2. **Install from GitHub (manual):**
    - Clone this repository and load it as an unpacked extension:
