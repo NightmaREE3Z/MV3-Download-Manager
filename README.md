@@ -28,7 +28,7 @@ Once installed, the extension will automatically start managing your downloads. 
 - **Green**: Download is complete.
 
 ### Acknowledgments:
-This extension is based on the original **Downloads Pro** extension by **Ner Karso**, which uses a progress bar to track download status. Modifications have been made to update it to Manifest V3 (MV3) and implement a different download tracking system using color-coded icons.
+This extension is based on the original **Downloads Pro** extension by **Ner Karso**, which uses a progress bar to track download status. Modifications have been made to update it to Manifest V3 (MV3) and implement a different download tracking system using color-coded icons, alongside a progress bar for downloads in version 4.5
 
 - The original extension can be found here: [Downloads Pro on Chrome Web Store](https://chromewebstore.google.com/detail/downloads-pro/lhhocifdmhogpekeppdjamkelohahbop).
 
