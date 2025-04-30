@@ -175,7 +175,7 @@
 
   // Toolbar icon
   let canvas = new OffscreenCanvas(38, 38);
-  let ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d', { willReadFrequently: true });
   const scale = devicePixelRatio < 2 ? 0.5 : 1;
   const size = 38 * scale;
   ctx.scale(scale, scale);
