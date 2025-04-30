@@ -4,17 +4,17 @@ let x = 0;
 let y = 0;
 
 // When message is received.
-chrome.runtime.onMessage.addListener(message => {
-  if (message === "show_gizmo") showGizmo();
+chrome.runtime.onMessage.addListener((message) => {
+  if (message === 'show_gizmo') showGizmo();
 
-  if (message === "invalidate_gizmo") {
+  if (message === 'invalidate_gizmo') {
     x = 0;
     y = 0;
   }
 });
 
 // Detect download click position.
-document.onmousedown = document.oncontextmenu = event => {
+document.onmousedown = document.oncontextmenu = (event) => {
   if (isDownloadable(event.target)) {
     x = event.clientX;
     y = event.clientY;
@@ -27,24 +27,21 @@ document.onmousedown = document.oncontextmenu = event => {
 function showGizmo() {
   if (!x && !y) return;
 
-  const $img = document.createElement("img");
-  $img.src = chrome.runtime.getURL("icons/iconblue48.png");
-  $img.style.cssText =
-    "width:48px;height:48px;position:fixed;opacity:1;z-index:999999;";
-  $img.style.left = x - 24 + "px";
-  $img.style.top = y - 48 + "px";
+  const $img = document.createElement('img');
+  $img.src = chrome.runtime.getURL('img/icons/icon-48x48.png');
+  $img.style.cssText = 'width:48px;height:48px;position:fixed;opacity:1;z-index:999999;';
+  $img.style.left = x - 24 + 'px';
+  $img.style.top = y - 48 + 'px';
   document.body.appendChild($img);
 
   setTimeout(() => {
-    const duration = calcDuration(
-      distance(x - 48, y - 48, window.innerWidth - 48, -48)
-    );
-    $img.style.transition = "all " + duration + "s";
-    $img.style.left = window.innerWidth - 60 + "px";
-    $img.style.top = -48 + "px";
+    const duration = calcDuration(distance(x - 48, y - 48, window.innerWidth - 48, -48));
+    $img.style.webkitTransition = 'all ' + duration + 's';
+    $img.style.left = window.innerWidth - 60 + 'px';
+    $img.style.top = -48 + 'px';
     $img.style.opacity = 0.5;
-    $img.style.width = 32 + "px";
-    $img.style.height = 32 + "px";
+    $img.style.width = 32 + 'px';
+    $img.style.height = 32 + 'px';
     setTimeout(() => document.body.removeChild($img), duration * 1000 + 200);
   }, 100);
 }
@@ -75,7 +72,7 @@ function calcDuration(distance, speed) {
  * @param {*} el
  */
 function isDownloadable(el) {
-  return el.nodeName === "IMG" || isLinkOrDescendantOfLink(el);
+  return el.nodeName === 'IMG' || isLinkOrDescendantOfLink(el);
 }
 
 /**
@@ -84,7 +81,7 @@ function isDownloadable(el) {
  */
 function isLinkOrDescendantOfLink(el) {
   do {
-    if (el.nodeName === "A" && el.href) {
+    if (el.nodeName === 'A' && el.href) {
       return true;
     }
   } while ((el = el.parentNode));

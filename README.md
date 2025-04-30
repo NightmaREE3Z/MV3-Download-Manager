@@ -12,7 +12,7 @@ A simple, yet effective download manager extension for your browser, built using
 
 ### Installation:
 1. **Chrome Web Store**: 
-   - The extension is available for download on the [Chrome Web Store](https://chromewebstore.google.com/detail/mv3-download-manager/oepjjkighhnkonjobaabpajgeijhngan). I warmly recommend for you to use the version made by Ner Karso, as that is the more advanced version of this one!
+   - The extension is available for download on the [Chrome Web Store](https://chromewebstore.google.com/detail/mv3-download-manager/oepjjkighhnkonjobaabpajgeijhngan).
    
 2. **Install from GitHub (manual):**
    - Clone this repository and load it as an unpacked extension:
