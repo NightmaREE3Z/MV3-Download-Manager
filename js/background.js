@@ -20,6 +20,10 @@ chrome.runtime.onMessage.addListener((message) => {
     refresh()
     sendInvalidateGizmo()
   }
+  if (message === 'popup_closed') {
+    isPopupOpen = false
+    refresh()
+  }
   if (typeof message === 'object' && 'window' in message) {
     devicePixelRatio = message.window.devicePixelRatio
     prefersColorSchemeDark = message.window.prefersColorSchemeDark
@@ -62,14 +66,11 @@ chrome.downloads.onErased.addListener(() => {
 })
 
 function refresh() {
-  // Always get all downloads so we can resolve in-progress, complete, and empty in one pass
   chrome.downloads.search({}, (allDownloads) => {
-    // In-progress check
     const inProgressItems = allDownloads.filter(
       d => d.state === "in_progress" && !d.paused && d.totalBytes > 0
     )
     if (inProgressItems.length) {
-      // Always clear interval before new one (extra safety)
       if (timer) clearInterval(timer)
       timer = setInterval(refresh, 1000)
 
@@ -87,15 +88,12 @@ function refresh() {
         drawToolbarProgressIcon(progress)
         return
       }
-      // If progress is 1, fall through to green check below (download finished)
     } else {
-      // If no in-progress, clear timer
       if (timer) {
         clearInterval(timer)
         timer = null
       }
     }
-    // No in-progress with progress, check for complete
     const someComplete = allDownloads.some(item => item.state === "complete" && item.exists !== false)
     if (someComplete) {
       drawToolbarIcon(unseen, "#00CC00")
@@ -128,7 +126,6 @@ function sendMessageToActiveTab(message) {
         try {
           chrome.tabs.sendMessage(tab.id, message, () => {
             if (chrome.runtime.lastError) {
-              // Safe to ignore
             }
           })
         } catch (e) {}

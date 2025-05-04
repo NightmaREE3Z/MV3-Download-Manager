@@ -52,6 +52,7 @@ const App = {
 
   init() {
     window.addEventListener("DOMContentLoaded", () => {
+      chrome.runtime.sendMessage('popup_open');
       popupReady = true;
       this.bindEvents();
       this.render();
@@ -59,7 +60,6 @@ const App = {
         if (popupReady) this.render();
       }, 500);
       chrome.downloads.onCreated.addListener((item) => {
-        // Store info for the last retried download
         if (App.lastRetried && App.lastRetried.url === item.url) {
           App.lastRetried.newId = item.id;
           App.lastRetried.startTime = item.startTime;
@@ -69,6 +69,7 @@ const App = {
     });
     window.addEventListener("unload", () => {
       popupReady = false;
+      chrome.runtime.sendMessage('popup_closed');
       Object.values(this.timers).forEach(clearInterval);
       this.timers = {};
       if (this.pollInterval) clearInterval(this.pollInterval);
@@ -129,18 +130,14 @@ const App = {
           console.error(chrome.runtime.lastError.message);
           return;
         }
-        // Custom sorting: group by filename, put in-progress or most recent above canceled
         data.sort((a, b) => {
-          // If one is retried and the other is canceled with same filename, retried is above
           if (a.filename === b.filename) {
             if (a.state === "in_progress" && b.state === "interrupted") return -1;
             if (a.state === "interrupted" && b.state === "in_progress") return 1;
             if (a.state === "complete" && b.state === "interrupted") return -1;
             if (a.state === "interrupted" && b.state === "complete") return 1;
-            // If both canceled, show most recent above
             return new Date(b.startTime) - new Date(a.startTime);
           }
-          // Otherwise, sort by startTime descending
           return new Date(b.startTime) - new Date(a.startTime);
         });
 
@@ -165,19 +162,16 @@ const App = {
     const ids = results.map(item => item.id);
     let htmlMap = {};
 
-    // Only add/remove/replace nodes as needed
     results.forEach((item, idx) => {
       if (!item) return;
       if (item.state === "in_progress" && !item.paused) this.startTimer(item.id);
       let newHtml = this.getDownloadView(item);
       htmlMap[item.id] = newHtml;
 
-      // If it's a new node
       let node = $(`#download-${item.id}`);
       if (!node) {
         const el = document.createElement("div");
         el.innerHTML = newHtml;
-        // Insert at correct position (preserve order)
         let prevNode = null;
         for (let i = idx - 1; i >= 0; --i) {
           let prev = $(`#download-${results[i].id}`);
@@ -196,14 +190,12 @@ const App = {
           downloadsEl.appendChild(el.firstChild);
         }
       } else if (this.prevHtmlMap[item.id] !== newHtml) {
-        // Only replace if html changed, to minimize flicker
         const el = document.createElement("div");
         el.innerHTML = newHtml;
         node.replaceWith(el.firstChild);
       }
     });
 
-    // Remove any download nodes that no longer exist
     if (this.prevDownloadIds.length) {
       this.prevDownloadIds.forEach(oldId => {
         if (!ids.includes(oldId)) {
@@ -222,7 +214,6 @@ const App = {
       downloadsEl.innerHTML = html;
     }
 
-    // Show "Show more" if needed
     if (this.resultsLength > this.resultsLimit && !$("#downloads .button--block")) {
       downloadsEl.insertAdjacentHTML("beforeend", Template.buttonShowMore());
     }
