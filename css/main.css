@@ -94,9 +94,11 @@ body {
   z-index: 2;
   text-align: center;
 }
+
 #language-switch:focus {
   outline: 2px solid #3584e4;
 }
+
 #language-switch:hover,
 #language-switch:active {
   background: rgba(var(--primary-rgb-color), 0.10);
@@ -154,6 +156,7 @@ body {
 .toolbar__action-row button.button--secondary:focus {
   outline: 2px solid #3584e4;
 }
+
 .toolbar__action-row .button:hover,
 .toolbar__action-row .button:active,
 .toolbar__action-row button.button--secondary:hover,
@@ -215,6 +218,7 @@ body {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
+  position: relative;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -280,21 +284,20 @@ body {
   font-size: 0.8em;
 }
 
-/* --- CANCELED ROW LAYOUT --- */
 .list__item__row {
   display: flex;
   align-items: center;
   width: 100%;
   margin-top: 4px;
 }
+
 .list__item__row .button {
-  margin-left: 0;
-  margin-right: 0;
+  margin-left: 8px;
 }
-/* Push canceled label to right, matching the padding as button on the left */
+
 .list__item__canceled {
   margin-left: auto;
-  padding-right: 12px;
+  margin-right: 8px;
   opacity: 0.6;
   font-size: 0.95em;
   white-space: nowrap;
@@ -304,12 +307,12 @@ body {
   margin-top: 4px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   width: 100%;
 }
 
 .list__item__buttons {
-  margin: 0 -2px;
+  margin: 0;
   flex-shrink: 0;
   display: flex;
 }
@@ -330,6 +333,8 @@ body {
   overflow: hidden;
   opacity: 0.5;
   font-size: 0.8em;
+  margin-left: auto;
+  margin-right: 8px;
 }
 
 .in-progress .list__item__controls {
@@ -399,5 +404,96 @@ body {
   }
   to {
     background-position: 0%;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e0e7ef;
+  border-radius: 6px;
+}
+
+.tiny-x-wrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  pointer-events: auto;
+}
+
+.tiny-x {
+  background: none;
+  border: none;
+  color: #222;
+  padding: 0;
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  min-width: 13px;
+  min-height: 13px;
+  max-width: 13px;
+  max-height: 13px;
+  cursor: pointer;
+  opacity: 0.78;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.12s;
+  box-shadow: none;
+  outline: none;
+  border-radius: 0;
+}
+
+.tiny-x:hover,
+.tiny-x:focus {
+  background: none;
+  color: #222;
+  opacity: 1;
+  outline: none;
+  box-shadow: none;
+}
+
+.tiny-x:active {
+  background: none;
+  color: #222;
+  opacity: 0.92;
+}
+
+.tiny-x svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  stroke-width: 2;
+  pointer-events: none;
+  display: block;
+}
+
+.download:not(.complete):not(.canceled) .tiny-x-wrap {
+  display: none !important;
+}
+
+.download.complete .tiny-x-wrap,
+.download.canceled .tiny-x-wrap {
+  display: flex !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tiny-x {
+    color: #fff;
+  }
+  .tiny-x:hover,
+  .tiny-x:focus,
+  .tiny-x:active {
+    color: #fff;
+    background: none;
+    opacity: 1;
   }
 }

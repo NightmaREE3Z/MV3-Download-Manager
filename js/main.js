@@ -1,9 +1,10 @@
-window.$ = typeof document !== "undefined" && document.querySelector
-  ? document.querySelector.bind(document)
-  : function () { return null; };
+window.$ = function(selector) {
+  return document.querySelector(selector);
+};
 
-Node.prototype.on = window.on = function (name, fn) {
+Node.prototype.on = window.on = function(name, fn) {
   if (this) this.addEventListener(name, fn);
+  return this;
 };
 
 const Format = {
@@ -25,12 +26,132 @@ const Format = {
   }
 };
 
+const DEFAULT_DOWNLOAD_ICON =
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0' stroke='none'/></g></svg>";
+
 const Template = {
   button(type, action, text) {
-    return `<button class="button button--${type}" data-action="${action}">${text}</button>`;
+    const btn = document.createElement("button");
+    btn.className = `button button--${type}`;
+    btn.setAttribute("data-action", action);
+    btn.textContent = text;
+    return btn;
   },
   buttonShowMore() {
-    return `<button class="button button--secondary button--block" data-action="more">Show more</button>`;
+    const btn = document.createElement("button");
+    btn.className = "button button--secondary button--block";
+    btn.setAttribute("data-action", "more");
+    btn.textContent = "Show more";
+    return btn;
+  },
+  tinyXButton() {
+    const btn = document.createElement("button");
+    btn.className = "tiny-x";
+    btn.setAttribute("data-action", "erase");
+    btn.setAttribute("title", t("remove") || "Remove");
+    btn.setAttribute("aria-label", t("remove") || "Remove");
+    btn.type = "button";
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "11");
+    svg.setAttribute("height", "11"); 
+    svg.setAttribute("viewBox", "0 0 11 11");
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M2 2L9 9M9 2L2 9");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linecap", "square");
+    path.setAttribute("fill", "none");
+
+    svg.appendChild(path);
+    btn.appendChild(svg);
+    return btn;
+  },
+  downloadItem(event) {
+    const container = document.createElement("div");
+    container.id = `download-${event.id}`;
+    container.className = `list__item download${!event.exists ? " removed" : ""} ${event.state === "complete" ? "complete" : ""} ${event.state === "interrupted" ? "canceled" : ""} ${event.paused ? "paused" : ""} ${event.state === "in_progress" ? "in-progress" : ""}`;
+    container.setAttribute("data-id", event.id);
+
+    if (event.state === "complete" || event.state === "interrupted") {
+      const xWrap = document.createElement("div");
+      xWrap.className = "tiny-x-wrap";
+      xWrap.appendChild(this.tinyXButton());
+      container.appendChild(xWrap);
+    }
+
+    const iconDiv = document.createElement("div");
+    iconDiv.className = "list__item__icon";
+    const iconImg = document.createElement("img");
+    iconImg.id = `icon-${event.id}`;
+    iconDiv.appendChild(iconImg);
+    container.appendChild(iconDiv);
+
+    const content = document.createElement("div");
+    content.className = "list__item__content";
+
+    const filename = document.createElement("p");
+    filename.className = "list__item__filename";
+    filename.title = App.getProperFilename(event.filename);
+    filename.setAttribute("data-action", "open");
+    filename.textContent = App.getProperFilename(event.filename);
+    content.appendChild(filename);
+
+    const source = document.createElement("a");
+    source.className = "list__item__source";
+    source.href = event.finalUrl;
+    source.setAttribute("data-action", "url");
+    source.title = event.finalUrl;
+    source.textContent = event.finalUrl;
+    content.appendChild(source);
+
+    if (event.state === "in_progress" && !event.paused) {
+      const progress = document.createElement("div");
+      progress.className = "progress";
+      const progressBar = document.createElement("div");
+      progressBar.className = "progress__bar";
+      if (event.totalBytes > 0) {
+        progressBar.style.width = ((100 * event.bytesReceived) / event.totalBytes).toFixed(1) + "%";
+      }
+      progress.appendChild(progressBar);
+      content.appendChild(progress);
+    }
+
+    const controls = document.createElement("div");
+    controls.className = "list__item__controls";
+
+    const buttons = document.createElement("div");
+    buttons.className = "list__item__buttons";
+
+    if (event.state === "complete") {
+      buttons.appendChild(this.button("secondary", "show", t("show_in_folder")));
+    } else if (event.state === "interrupted") {
+      buttons.appendChild(this.button("primary", "retry", t("retry")));
+    } else if (event.paused) {
+      buttons.appendChild(this.button("primary", "resume", t("resume")));
+      buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
+    } else {
+      buttons.appendChild(this.button("primary", "pause", t("pause")));
+      buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
+    }
+
+    controls.appendChild(buttons);
+
+    const status = document.createElement("div");
+    status.className = "list__item__status status";
+    if (event.state === "complete") {
+      status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
+    } else if (event.state === "interrupted") {
+      status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
+    } else if (event.paused) {
+      status.textContent = t("paused");
+    }
+    controls.appendChild(status);
+
+    content.appendChild(controls);
+    container.appendChild(content);
+    return container;
   }
 };
 
@@ -98,7 +219,12 @@ const App = {
           this.render();
         } else {
           const emptyTmpl = $("#tmpl__state-empty");
-          if (emptyTmpl) $("#downloads").innerHTML = emptyTmpl.innerHTML;
+          const downloads = $("#downloads");
+          if (emptyTmpl && downloads) {
+            const clone = document.importNode(emptyTmpl.content, true);
+            while (downloads.firstChild) downloads.removeChild(downloads.firstChild);
+            downloads.appendChild(clone);
+          }
           if (emptyTmpl) {
             localize();
           }
@@ -149,53 +275,64 @@ const App = {
 
   updateDownloadsView(results) {
     const downloadsEl = $("#downloads");
+    if (!downloadsEl) return;
+
     const emptyTmpl = $("#tmpl__state-empty");
     if (!results || results.length === 0) {
-      downloadsEl.innerHTML = emptyTmpl ? emptyTmpl.innerHTML : "";
       if (emptyTmpl) {
+        const clone = document.importNode(emptyTmpl.content, true);
+        while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
+        downloadsEl.appendChild(clone);
         localize();
       }
       this.prevDownloadIds = [];
       this.prevHtmlMap = {};
       return;
     }
+
     const ids = results.map(item => item.id);
-    let htmlMap = {};
+    let nodeMap = {};
 
     results.forEach((item, idx) => {
       if (!item) return;
       if (item.state === "in_progress" && !item.paused) this.startTimer(item.id);
-      let newHtml = this.getDownloadView(item);
-      htmlMap[item.id] = newHtml;
 
-      let node = $(`#download-${item.id}`);
-      if (!node) {
-        const el = document.createElement("div");
-        el.innerHTML = newHtml;
+      const downloadItem = Template.downloadItem(item);
+      nodeMap[item.id] = downloadItem;
+
+      let existingNode = $(`#download-${item.id}`);
+      if (!existingNode) {
         let prevNode = null;
         for (let i = idx - 1; i >= 0; --i) {
-          let prev = $(`#download-${results[i].id}`);
-          if (prev) {
-            prevNode = prev;
-            break;
+          prevNode = $(`#download-${results[i].id}`);
+          if (prevNode) break;
+        }
+
+        if (prevNode && prevNode.nextSibling) {
+          downloadsEl.insertBefore(downloadItem, prevNode.nextSibling);
+        } else if (prevNode) {
+          downloadsEl.appendChild(downloadItem);
+        } else if (downloadsEl.firstChild) {
+          downloadsEl.insertBefore(downloadItem, downloadsEl.firstChild);
+        } else {
+          downloadsEl.appendChild(downloadItem);
+        }
+
+        const iconImg = downloadItem.querySelector(`#icon-${item.id}`);
+        if (iconImg) {
+          if (item.state === "in_progress" || item.paused) {
+            iconImg.src = DEFAULT_DOWNLOAD_ICON;
+          } else {
+            iconImg.src = DEFAULT_DOWNLOAD_ICON;
+            chrome.downloads.getFileIcon(item.id, {size: 32}, (iconURL) => {
+              if (iconURL && iconImg) iconImg.src = iconURL;
+            });
           }
         }
-        if (prevNode && prevNode.nextSibling) {
-          downloadsEl.insertBefore(el.firstChild, prevNode.nextSibling);
-        } else if (prevNode) {
-          downloadsEl.appendChild(el.firstChild);
-        } else if (downloadsEl.firstChild) {
-          downloadsEl.insertBefore(el.firstChild, downloadsEl.firstChild);
-        } else {
-          downloadsEl.appendChild(el.firstChild);
-        }
-      } else if (this.prevHtmlMap[item.id] !== newHtml) {
-        const el = document.createElement("div");
-        el.innerHTML = newHtml;
-        node.replaceWith(el.firstChild);
       }
     });
 
+    // Remove old items
     if (this.prevDownloadIds.length) {
       this.prevDownloadIds.forEach(oldId => {
         if (!ids.includes(oldId)) {
@@ -205,117 +342,13 @@ const App = {
       });
     }
 
-    if (!downloadsEl.hasChildNodes() || downloadsEl.childElementCount === 0) {
-      let html = "";
-      results.forEach(item => {
-        if (!item) return;
-        html += htmlMap[item.id];
-      });
-      downloadsEl.innerHTML = html;
-    }
-
-    if (this.resultsLength > this.resultsLimit && !$("#downloads .button--block")) {
-      downloadsEl.insertAdjacentHTML("beforeend", Template.buttonShowMore());
+    // Show more button if needed
+    if (this.resultsLength > this.resultsLimit && !$(".button--block")) {
+      downloadsEl.appendChild(Template.buttonShowMore());
     }
 
     this.prevDownloadIds = ids;
-    this.prevHtmlMap = htmlMap;
-  },
-
-  getDownloadView(event) {
-    let buttons = "";
-    let status = "";
-    let progressClass = "";
-    let progressWidth = "0%";
-    if (!event) return "";
-
-    if (event.state === "complete") {
-      status = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
-      buttons = Template.button("secondary", "show", t("show_in_folder"));
-      return `<div id="download-${event.id}" class="list__item download${!event.exists ? " removed" : ""}" data-id="${event.id}">
-        <div class="list__item__icon">
-          <img id="icon-${event.id}" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T">
-        </div>
-        <div class="list__item__content">
-          <p class="list__item__filename" title="${this.getProperFilename(event.filename)}" data-action="open">${this.getProperFilename(event.filename)}</p>
-          <a href="${event.finalUrl}" class="list__item__source" data-action="url" title="${event.finalUrl}">${event.finalUrl}</a>
-          <div class="list__item__row">
-            ${Template.button("secondary", "show", t("show_in_folder"))}
-            <span class="list__item__canceled">${status}</span>
-          </div>
-        </div>
-      </div>`;
-    }
-
-    if (event.state === "interrupted") {
-      status = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
-      buttons = Template.button("primary", "retry", t("retry"));
-      return `<div id="download-${event.id}" class="list__item download canceled" data-id="${event.id}">
-        <div class="list__item__icon">
-          <img id="icon-${event.id}" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T">
-        </div>
-        <div class="list__item__content">
-          <p class="list__item__filename" title="${this.getProperFilename(event.filename)}" data-action="open">${this.getProperFilename(event.filename)}</p>
-          <a href="${event.finalUrl}" class="list__item__source" data-action="url" title="${event.finalUrl}">${event.finalUrl}</a>
-          <div class="list__item__row">
-            ${Template.button("primary", "retry", t("retry"))}
-            <span class="list__item__canceled">${status}</span>
-          </div>
-        </div>
-      </div>`;
-    }
-
-    if (event.paused) {
-      status = t("paused");
-      progressClass = "paused";
-      buttons = Template.button("primary", "resume", t("resume")) + Template.button("secondary", "cancel", t("cancel"));
-    } else {
-      status = "";
-      progressClass = "in-progress";
-      buttons = Template.button("primary", "pause", t("pause")) + Template.button("secondary", "cancel", t("cancel"));
-    }
-    if (event.totalBytes > 0) {
-      progressWidth = ((100 * event.bytesReceived) / event.totalBytes).toFixed(1) + "%";
-    }
-
-    const extraClass = [
-      "download",
-      !event.exists ? "removed" : "",
-      event.state === "interrupted" ? "canceled" : "",
-      progressClass,
-      this.isDangerous(event) ? "danger" : ""
-    ].join(" ").trim();
-
-    const fileName = this.getProperFilename(event.filename);
-    const fileUrl = event.finalUrl;
-
-    const defaultFileIcon = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAACzElEQVRYhe2YT3LaMBTGP3VgmAZqPOlFegA6JCG3yarXYMMqu3TDFF+DK/QGzQ3a6SYbS68LWViS9SRZZrrKNwgL2U/++f2RjYF3T`;
-
-    if (fileName) {
-      chrome.downloads.getFileIcon(event.id, { size: 32 }, (iconURL) => {
-        const iconImg = $(`#icon-${event.id}`);
-        if (iconURL && iconImg) iconImg.src = iconURL;
-      });
-    }
-
-    return `<div id="download-${event.id}" class="list__item ${extraClass}" data-id="${event.id}">
-      <div class="list__item__icon">
-        <img id="icon-${event.id}" src="${defaultFileIcon}">
-      </div>
-      <div class="list__item__content">
-        <p class="list__item__filename" title="${fileName}" data-action="open">${fileName}</p>
-        <a href="${fileUrl}" class="list__item__source" data-action="url" title="${fileUrl}">${fileUrl}</a>
-        ${
-          progressClass === "in-progress"
-            ? `<div class="progress"><div class="progress__bar" style="width: ${progressWidth};"></div></div>`
-            : ""
-        }
-        <div class="list__item__controls">
-          <div class="list__item__buttons">${buttons}</div>
-          <div class="list__item__status status">${status}</div>
-        </div>
-      </div>
-    </div>`;
+    this.prevHtmlMap = nodeMap;
   },
 
   refreshDownloadView(id) {
@@ -325,11 +358,24 @@ const App = {
         return;
       }
       if (results[0]) {
-        const $el = document.createElement("div");
-        $el.innerHTML = this.getDownloadView(results[0]);
-        const downloadEl = $(`#download-${id}`);
-        if (downloadEl) {
-          $("#downloads").replaceChild($el.firstChild, downloadEl);
+        const newNode = Template.downloadItem(results[0]);
+        const oldNode = $(`#download-${id}`);
+        const downloads = $("#downloads");
+        
+        if (oldNode && downloads) {
+          downloads.replaceChild(newNode, oldNode);
+          
+          const iconImg = newNode.querySelector(`#icon-${id}`);
+          if (iconImg) {
+            if (results[0].state === "in_progress" || results[0].paused) {
+              iconImg.src = DEFAULT_DOWNLOAD_ICON;
+            } else {
+              iconImg.src = DEFAULT_DOWNLOAD_ICON;
+              chrome.downloads.getFileIcon(id, {size: 32}, (iconURL) => {
+                if (iconURL && iconImg) iconImg.src = iconURL;
+              });
+            }
+          }
         }
       }
     });
@@ -481,15 +527,13 @@ const App = {
           }
 
           if ($status) {
-            $status.innerHTML = `${Format.toByte(speed)}/s - ${Format.toByte(event.bytesReceived)} of ${Format.toByte(
-              event.totalBytes
-            )}${left_text}`;
+            $status.textContent = `${Format.toByte(speed)}/s - ${Format.toByte(event.bytesReceived)} of ${Format.toByte(event.totalBytes)}${left_text}`;
             if (event.bytesReceived && event.bytesReceived === event.totalBytes) {
-              $status.innerHTML = Format.toByte(event.totalBytes);
+              $status.textContent = Format.toByte(event.totalBytes);
             }
           }
         } else {
-          if ($status) $status.innerHTML = "";
+          if ($status) $status.textContent = "";
           this.stopTimer(id);
           this.refreshDownloadView(event.id);
         }
@@ -530,12 +574,6 @@ const App = {
   stopTimer(id) {
     clearInterval(this.timers[id]);
     delete this.timers[id];
-  },
-
-  elementFromHtml(html) {
-    const $el = document.createElement("div");
-    $el.innerHTML = html;
-    return $el.firstChild;
   },
 
   getProperFilename(filename) {
