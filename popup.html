@@ -2,10 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
-  <title>Downloads</title>
+  <!-- Set a fixed viewport width for Chrome popup -->
+  <meta name="viewport" content="width=420, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+  <title data-i18n="downloads_title">Downloads</title>
   <link rel="shortcut icon" type="image/png" href="icons/iconblue.png">
   <link rel="stylesheet" type="text/css" href="css/main.css">
+  <style>
+    html, body {
+      width: 420px !important;
+      min-width: 420px !important;
+      max-width: 420px !important;
+      height: 506px !important;
+      min-height: 506px !important;
+      max-height: 506px !important;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #main {
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
   <nav class="toolbar">
@@ -13,10 +31,10 @@
       <option value="en">🇬🇧 English</option>
       <option value="fi">🇫🇮 Suomi</option>
     </select>
-    <div class="toolbar__title">Downloads</div>
+    <div class="toolbar__title" data-i18n="downloads_title">Downloads</div>
     <div class="toolbar__action-row">
-      <button id="action-show-all" class="button button--secondary">Show all downloads</button>
-      <button id="action-clear-all" class="button button--secondary">Clear list</button>
+      <button id="action-show-all" class="button button--secondary" data-i18n="show_all_downloads">Show all downloads</button>
+      <button id="action-clear-all" class="button button--secondary" data-i18n="clear_list">Clear list</button>
     </div>
   </nav>
 
@@ -30,10 +48,10 @@
         <svg class="state__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 570 571.34">
           <path fill="var(--icon-path-1-color)" d="M426.6 135.25H190.98c-14.05 0-25.43 11.39-25.43 25.43v333.87c0 14.05 11.39 25.43 25.43 25.43h235.64c14.05 0 25.43-11.39 25.43-25.43V160.7c0-14.06-11.39-25.45-25.45-25.45z"/>
           <path fill="var(--icon-path-2-color)" d="M356.78 435.6H121.14c-14.05 0-25.43-11.39-25.43-25.43V76.3c0-14.05 11.39-25.43 25.43-25.43h176.69l84.38 84.38v274.92c.01 14.04-11.38 25.43-25.43 25.43z"/>
-          <path fill="var(--icon-path-4-color)" d="M382.22 135.25h-58.93c-14.05 0-25.45-11.39-25.45-25.45V50.87l84.38 84.38z"/>
           <path d="M169.13 237.7H308.8m-139.67 31.64H308.8m-139.67 31.64H308.8m-139.67 31.63h84.64" fill="none" stroke="var(--icon-path-3-color)" stroke-width="11" stroke-linecap="round" stroke-miterlimit="10"/>
+          <path fill="var(--icon-path-4-color)" d="M382.22 135.25h-58.93c-14.05 0-25.45-11.39-25.45-25.45V50.87l84.38 84.38z"/>
         </svg>
-        <div class="state__title" id="files-appear">Files will appear here</div>
+        <div class="state__title" id="files-appear" data-i18n="files_will_appear_here">Files will appear here</div>
       </div>
     </div>
   </template>

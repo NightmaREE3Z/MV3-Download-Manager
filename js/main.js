@@ -1,3 +1,5 @@
+// MV3 Download Manager main.js/popup script
+
 window.$ = function(selector) {
   return document.querySelector(selector);
 };
@@ -9,7 +11,8 @@ Node.prototype.on = window.on = function(name, fn) {
 
 const Format = {
   toByte(bytes) {
-    if (!bytes == null) return "0 B";
+    if (!bytes && bytes !== 0) return "0 B";
+    if (bytes < 1000) return bytes + " B";
     if (bytes < 1000 * 1000) return (bytes / 1000).toFixed() + " KB";
     if (bytes < 1000 * 1000 * 10) return (bytes / 1000 / 1000).toFixed(1) + " MB";
     if (bytes < 1000 * 1000 * 1000) return (bytes / 1000 / 1000).toFixed() + " MB";
@@ -27,7 +30,7 @@ const Format = {
 };
 
 const DEFAULT_DOWNLOAD_ICON =
-  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0' stroke='none'/></g></svg>";
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0'/></g></svg>";
 
 const Template = {
   button(type, action, text) {
@@ -54,7 +57,7 @@ const Template = {
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "11");
-    svg.setAttribute("height", "11"); 
+    svg.setAttribute("height", "11");
     svg.setAttribute("viewBox", "0 0 11 11");
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -146,6 +149,8 @@ const Template = {
       status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
     } else if (event.paused) {
       status.textContent = t("paused");
+    } else if (event.state === "in_progress") {
+      status.textContent = "";
     }
     controls.appendChild(status);
 
@@ -156,6 +161,9 @@ const Template = {
 };
 
 let popupReady = false;
+let debounceTimeout = null;
+let pollInterval = null;
+let pollingFast = false;
 
 const App = {
   timers: {},
@@ -166,9 +174,6 @@ const App = {
     ? window.matchMedia("(prefers-color-scheme: dark)").matches
     : false,
   renderPending: false,
-  pollInterval: null,
-  prevDownloadIds: [],
-  prevHtmlMap: {},
   lastRetried: null,
 
   init() {
@@ -177,15 +182,9 @@ const App = {
       popupReady = true;
       this.bindEvents();
       this.render();
-      this.pollInterval = setInterval(() => {
-        if (popupReady) this.render();
-      }, 500);
-      chrome.downloads.onCreated.addListener((item) => {
-        if (App.lastRetried && App.lastRetried.url === item.url) {
-          App.lastRetried.newId = item.id;
-          App.lastRetried.startTime = item.startTime;
-        }
-        if (popupReady) this.render();
+      this.setAdaptivePolling();
+      chrome.downloads.onCreated.addListener(() => {
+        this.scheduleRender();
       });
     });
     window.addEventListener("unload", () => {
@@ -193,8 +192,16 @@ const App = {
       chrome.runtime.sendMessage('popup_closed');
       Object.values(this.timers).forEach(clearInterval);
       this.timers = {};
-      if (this.pollInterval) clearInterval(this.pollInterval);
+      if (pollInterval) clearInterval(pollInterval);
     });
+  },
+
+  setAdaptivePolling(inProgress = false) {
+    if (pollInterval) clearInterval(pollInterval);
+    pollingFast = inProgress;
+    pollInterval = setInterval(() => {
+      if (popupReady) this.scheduleRender();
+    }, inProgress ? 1200 : 3500);
   },
 
   bindEvents() {
@@ -233,15 +240,20 @@ const App = {
     });
 
     $("#downloads")?.on("click", this.handleClick.bind(this));
+
+    document.getElementById('language-switch')?.addEventListener('change', (e) => {
+      setTimeout(() => {
+        if (typeof App !== "undefined" && App.render) App.render();
+      }, 10);
+      setTimeout(localize, 20);
+    });
   },
 
   scheduleRender() {
-    if (this.renderPending) return;
-    this.renderPending = true;
-    setTimeout(() => {
-      this.renderPending = false;
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
       this.render();
-    }, 400);
+    }, 200);
   },
 
   render() {
@@ -256,6 +268,23 @@ const App = {
           console.error(chrome.runtime.lastError.message);
           return;
         }
+
+        data = data.filter(item => {
+          if (
+            item.state === "interrupted" &&
+            (
+              item.error === "USER_CANCELED" ||
+              item.error === "USER_CANCELLED" ||
+              item.error === "CANCELED"
+            ) &&
+            item.exists === false
+          ) {
+            try { chrome.downloads.erase({ id: item.id }); } catch (e) {}
+            return false;
+          }
+          return true;
+        });
+
         data.sort((a, b) => {
           if (a.filename === b.filename) {
             if (a.state === "in_progress" && b.state === "interrupted") return -1;
@@ -269,6 +298,11 @@ const App = {
 
         this.resultsLength = data.length;
         this.updateDownloadsView(data.slice(0, this.resultsLimit));
+
+        const anyInProgress = data.some(d => d.state === "in_progress" && !d.paused);
+        if (anyInProgress !== pollingFast) {
+          this.setAdaptivePolling(anyInProgress);
+        }
       }
     );
   },
@@ -285,70 +319,40 @@ const App = {
         downloadsEl.appendChild(clone);
         localize();
       }
-      this.prevDownloadIds = [];
-      this.prevHtmlMap = {};
       return;
     }
 
-    const ids = results.map(item => item.id);
-    let nodeMap = {};
+    while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
 
-    results.forEach((item, idx) => {
-      if (!item) return;
-      if (item.state === "in_progress" && !item.paused) this.startTimer(item.id);
+    results.forEach((item) => {
+      const node = Template.downloadItem(item);
+      downloadsEl.appendChild(node);
 
-      const downloadItem = Template.downloadItem(item);
-      nodeMap[item.id] = downloadItem;
-
-      let existingNode = $(`#download-${item.id}`);
-      if (!existingNode) {
-        let prevNode = null;
-        for (let i = idx - 1; i >= 0; --i) {
-          prevNode = $(`#download-${results[i].id}`);
-          if (prevNode) break;
-        }
-
-        if (prevNode && prevNode.nextSibling) {
-          downloadsEl.insertBefore(downloadItem, prevNode.nextSibling);
-        } else if (prevNode) {
-          downloadsEl.appendChild(downloadItem);
-        } else if (downloadsEl.firstChild) {
-          downloadsEl.insertBefore(downloadItem, downloadsEl.firstChild);
-        } else {
-          downloadsEl.appendChild(downloadItem);
-        }
-
-        const iconImg = downloadItem.querySelector(`#icon-${item.id}`);
-        if (iconImg) {
-          if (item.state === "in_progress" || item.paused) {
+      const iconImg = node.querySelector(`#icon-${item.id}`);
+      if (iconImg) {
+        if (item.state === "in_progress" || item.paused) {
+          if (iconImg.src !== DEFAULT_DOWNLOAD_ICON) {
             iconImg.src = DEFAULT_DOWNLOAD_ICON;
-          } else {
-            iconImg.src = DEFAULT_DOWNLOAD_ICON;
-            chrome.downloads.getFileIcon(item.id, {size: 32}, (iconURL) => {
-              if (iconURL && iconImg) iconImg.src = iconURL;
-            });
           }
+        } else {
+          chrome.downloads.getFileIcon(item.id, {size: 32}, (iconURL) => {
+            if (iconURL && iconImg.src !== iconURL) {
+              iconImg.src = iconURL;
+            }
+          });
         }
+      }
+
+      if (item.state === "in_progress" && !item.paused) {
+        this.startTimer(item.id);
+      } else {
+        this.stopTimer(item.id);
       }
     });
 
-    // Remove old items
-    if (this.prevDownloadIds.length) {
-      this.prevDownloadIds.forEach(oldId => {
-        if (!ids.includes(oldId)) {
-          const oldNode = $(`#download-${oldId}`);
-          if (oldNode) downloadsEl.removeChild(oldNode);
-        }
-      });
-    }
-
-    // Show more button if needed
-    if (this.resultsLength > this.resultsLimit && !$(".button--block")) {
+    if (this.resultsLength > this.resultsLimit) {
       downloadsEl.appendChild(Template.buttonShowMore());
     }
-
-    this.prevDownloadIds = ids;
-    this.prevHtmlMap = nodeMap;
   },
 
   refreshDownloadView(id) {
@@ -358,25 +362,7 @@ const App = {
         return;
       }
       if (results[0]) {
-        const newNode = Template.downloadItem(results[0]);
-        const oldNode = $(`#download-${id}`);
-        const downloads = $("#downloads");
-        
-        if (oldNode && downloads) {
-          downloads.replaceChild(newNode, oldNode);
-          
-          const iconImg = newNode.querySelector(`#icon-${id}`);
-          if (iconImg) {
-            if (results[0].state === "in_progress" || results[0].paused) {
-              iconImg.src = DEFAULT_DOWNLOAD_ICON;
-            } else {
-              iconImg.src = DEFAULT_DOWNLOAD_ICON;
-              chrome.downloads.getFileIcon(id, {size: 32}, (iconURL) => {
-                if (iconURL && iconImg) iconImg.src = iconURL;
-              });
-            }
-          }
-        }
+        this.render();
       }
     });
   },
@@ -495,47 +481,39 @@ const App = {
           return;
         }
 
-        if (event.state !== "complete") {
+        if (event.state === "in_progress" && !event.paused) {
           let speed = 0;
           let left_text = "";
-          const remainingBytes = event.totalBytes - event.bytesReceived;
-          const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
+          let bytesReceived = event.bytesReceived || 0;
+          let totalBytes = event.totalBytes || 0;
+          let speedText = "0 B/s";
+          let transferred = Format.toByte(bytesReceived);
+          let total = Format.toByte(totalBytes);
+          let left = "";
+          let timeLeft = "";
 
-          if (remainingSeconds > 0) {
-            speed = remainingBytes / remainingSeconds;
-          }
-
-          if (speed) {
-            left_text = `, ${Format.toTime(remainingSeconds)} ${t("left")}`;
-          }
-
-          if (progressCurrentValue === 0) {
-            if (event.totalBytes > 0 && speed) {
-              progressCurrentValue = event.bytesReceived / event.totalBytes;
-              progressNextValue = (event.bytesReceived + speed) / event.totalBytes;
-              progressLastValue = progressCurrentValue;
-              progressRemainingTime += 1000;
-            }
-          } else {
-            if (event.totalBytes > 0) {
-              const currentProgress = event.bytesReceived / event.totalBytes;
-              const progressDelta = currentProgress - progressLastValue;
-              progressNextValue = currentProgress + progressDelta;
-              progressLastValue = currentProgress;
-              progressRemainingTime += 1000;
+          if (event.estimatedEndTime) {
+            const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
+            if (remainingSeconds > 0 && totalBytes > 0) {
+              speed = (totalBytes - bytesReceived) / remainingSeconds;
+              speedText = Format.toByte(speed) + "/s";
+              timeLeft = Format.toTime(remainingSeconds);
+              left = `, ${timeLeft} ${t("left")}`;
             }
           }
 
           if ($status) {
-            $status.textContent = `${Format.toByte(speed)}/s - ${Format.toByte(event.bytesReceived)} of ${Format.toByte(event.totalBytes)}${left_text}`;
-            if (event.bytesReceived && event.bytesReceived === event.totalBytes) {
-              $status.textContent = Format.toByte(event.totalBytes);
-            }
+            $status.textContent = `${speedText} - ${transferred} of ${total}${left}`;
           }
-        } else {
-          if ($status) $status.textContent = "";
+        } else if (event.state === "complete") {
+          if ($status) $status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
           this.stopTimer(id);
-          this.refreshDownloadView(event.id);
+        } else if (event.paused) {
+          if ($status) $status.textContent = t("paused");
+          this.stopTimer(id);
+        } else if (event.state === "interrupted") {
+          if ($status) $status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
+          this.stopTimer(id);
         }
       });
     };

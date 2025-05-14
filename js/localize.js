@@ -99,7 +99,9 @@ document.addEventListener("DOMContentLoaded", function() {
     langSel.addEventListener("change", e => {
       localize(e.target.value);
       saveLang(e.target.value);
-      if (typeof App !== "undefined" && App.render) App.render();
+      setTimeout(() => {
+        if (typeof App !== "undefined" && App.render) App.render();
+      }, 10);
     });
   }
 });

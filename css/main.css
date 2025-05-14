@@ -325,6 +325,7 @@ body {
   height: 30px;
 }
 
+/* Download progress text is LEFT aligned at the left edge */
 .list__item__status {
   max-width: 100%;
   display: block;
@@ -333,8 +334,11 @@ body {
   overflow: hidden;
   opacity: 0.5;
   font-size: 0.8em;
-  margin-left: auto;
-  margin-right: 8px;
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 6px;
+  margin-bottom: 0;
+  text-align: left;
 }
 
 .in-progress .list__item__controls {
