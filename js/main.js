@@ -1,5 +1,3 @@
-// js/main.js
-
 window.onerror = function (message, source, lineno, colno, error) {
   let errBox = document.getElementById("popup-error-msg");
   if (!errBox) {
@@ -176,7 +174,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function scheduleRender() {
     if (debounceTimeout) clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(render, 200);
+    debounceTimeout = setTimeout(window.render, 200);
   }
 
   function setAdaptivePolling(inProgress = false) {
@@ -479,6 +477,19 @@ document.addEventListener("DOMContentLoaded", function () {
     const locale = this.value;
     if (typeof setLocale === "function") setLocale(locale);
   });
+
+  // Defensive handling for messaging, as this can cause the "Receiving end does not exist" error:
+  function sendMessageDefensively(message, callback) {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        // Silently ignore the error, as it usually means the popup/background isn't listening
+        return;
+      }
+      if (callback) callback(response);
+    });
+  }
+  // Example usage:
+  // sendMessageDefensively({foo: "bar"}, (response) => { ... });
 
   // Initial setup after localize.js loads
   if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
