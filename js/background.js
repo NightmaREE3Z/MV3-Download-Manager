@@ -1,3 +1,5 @@
+// MV3 Download Manager background script (service worker)
+
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -5,7 +7,6 @@ if (chrome?.downloads?.setUiOptions) {
   chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
 }
 
-let isPopupOpen = false;
 let isUnsafe = false;
 let unseen = [];
 let timer = null;
@@ -15,44 +16,6 @@ let downloadsState = {};
 
 chrome.runtime.onStartup?.addListener(() => setDefaultBlueIcon());
 setDefaultBlueIcon();
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message === 'popup_open') {
-    isPopupOpen = true;
-    unseen = [];
-    refresh();
-    sendInvalidateGizmo();
-    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-      if (chrome.runtime.lastError) return;
-      updateDownloadsState(downloads);
-      chrome.runtime.sendMessage({ type: "downloads_state", data: downloads });
-    });
-  }
-  if (message === 'popup_closed') {
-    isPopupOpen = false;
-    refresh();
-  }
-  if (typeof message === 'object' && message.type === 'get_downloads_state') {
-    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-      if (chrome.runtime.lastError) return sendResponse([]);
-      updateDownloadsState(downloads);
-      sendResponse(downloads);
-    });
-    return true;
-  }
-  if (typeof message === 'object' && 'window' in message) {
-    devicePixelRatio = message.window.devicePixelRatio;
-    prefersColorSchemeDark = message.window.prefersColorSchemeDark;
-    refresh();
-  }
-});
-
-chrome.runtime.onConnect?.addListener((externalPort) => {
-  externalPort.onDisconnect.addListener(() => {
-    isPopupOpen = false;
-    refresh();
-  });
-});
 
 chrome.downloads.onCreated.addListener((item) => {
   downloadsState[item.id] = item;
@@ -69,7 +32,7 @@ chrome.downloads.onChanged.addListener((event) => {
       }
     });
   }
-  if (event.state && event.state.current === 'complete' && !isPopupOpen) {
+  if (event.state && event.state.current === 'complete') {
     unseen.push(event);
   }
   if (event.state || event.paused) refresh();
@@ -145,27 +108,10 @@ function setDefaultBlueIcon() {
 }
 
 function sendShowGizmo() {
-  sendMessageToActiveTab('show_gizmo');
+  // Removed messaging, no-op for MV3
 }
 function sendInvalidateGizmo() {
-  sendMessageToActiveTab('invalidate_gizmo');
-}
-function sendMessageToActiveTab(message) {
-  const current = {
-    active: true,
-    currentWindow: true,
-    windowType: 'normal',
-  };
-  chrome.tabs.query(current, (tabs) => {
-    if (!tabs || !tabs.length) return;
-    tabs.forEach((tab) => {
-      if (tab && tab.url && tab.url.startsWith('http')) {
-        try {
-          chrome.tabs.sendMessage(tab.id, message, () => {});
-        } catch (e) {}
-      }
-    });
-  });
+  // Removed messaging, no-op for MV3
 }
 
 function getScale() {

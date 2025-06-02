@@ -1,12 +1,20 @@
 {
   "downloads_title": { "message": "Lataukset" },
-  "show_all": { "message": "Näytä kaikki" },
-  "clear_all": { "message": "Tyhjennä kaikki" },
-  "files_appear": { "message": "Lataamasi tiedostot näkyvät täällä" },
+  "show_all_downloads": { "message": "Lataushistoria" },
+  "clear_list": { "message": "Tyhjennä lataukset" },
   "pause": { "message": "Tauko" },
-  "cancel": { "message": "Peruuta" },
   "resume": { "message": "Jatka" },
+  "cancel": { "message": "Peruuta" },
   "retry": { "message": "Yritä uudelleen" },
-  "cancelled": { "message": "Peruutettu" },
-  "show_in_folder": { "message": "Näytä kansiossa" }
+  "show_in_folder": { "message": "Näytä kansiossa" },
+  "remove": { "message": "Poista" },
+  "files_will_appear_here": { "message": "Tiedostot ilmestyvät tähän" },
+  "left": { "message": "jäljellä" },
+  "paused": { "message": "Tauolla" },
+  "canceled": { "message": "Peruutettu" },
+  "secs": { "message": "sek" },
+  "mins": { "message": "min" },
+  "hours": { "message": "h" },
+  "days": { "message": "pv" },
+  "of": { "message": "/" }
 }

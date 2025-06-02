@@ -1,11 +1,12 @@
-// MV3 Download Manager main.js/popup script
+// js/main.js
 
-window.onerror = function(message, source, lineno, colno, error) {
+window.onerror = function (message, source, lineno, colno, error) {
   let errBox = document.getElementById("popup-error-msg");
   if (!errBox) {
     errBox = document.createElement("div");
     errBox.id = "popup-error-msg";
-    errBox.style.cssText = "color:#fff;background:#c00;padding:8px;font-size:13px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;width:100%;text-align:left;";
+    errBox.style.cssText =
+      "color:#fff;background:#c00;padding:8px;font-size:13px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;width:100%;text-align:left;";
     document.body.appendChild(errBox);
   }
   errBox.textContent = "Popup Error: " + message;
@@ -55,7 +56,7 @@ const Template = {
     const btn = document.createElement("button");
     btn.className = "button button--secondary button--block";
     btn.setAttribute("data-action", "more");
-    btn.textContent = "Show more";
+    btn.textContent = t("show_all_downloads");
     return btn;
   },
   tinyXButton() {
@@ -84,12 +85,14 @@ const Template = {
     container.id = `download-${event.id}`;
     container.className = `list__item download${!event.exists ? " removed" : ""} ${event.state === "complete" ? "complete" : ""} ${event.state === "interrupted" ? "canceled" : ""} ${event.paused ? "paused" : ""}`;
     container.setAttribute("data-id", event.id);
+
     if (event.state === "complete" || event.state === "interrupted") {
       const xWrap = document.createElement("div");
       xWrap.className = "tiny-x-wrap";
       xWrap.appendChild(this.tinyXButton());
       container.appendChild(xWrap);
     }
+
     const iconDiv = document.createElement("div");
     iconDiv.className = "list__item__icon";
     const iconImg = document.createElement("img");
@@ -99,6 +102,7 @@ const Template = {
 
     const content = document.createElement("div");
     content.className = "list__item__content";
+
     const filename = document.createElement("p");
     filename.className = "list__item__filename";
     filename.title = App.getProperFilename(event.filename);
@@ -142,6 +146,7 @@ const Template = {
       buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
     }
     controls.appendChild(buttons);
+
     const status = document.createElement("div");
     status.className = "list__item__status status";
     if (event.state === "complete") {
@@ -154,19 +159,20 @@ const Template = {
       status.textContent = "";
     }
     controls.appendChild(status);
+
     content.appendChild(controls);
     container.appendChild(content);
     return container;
   }
 };
 
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function () {
   let debounceTimeout = null;
   let pollInterval = null;
   let pollingFast = false;
   let timers = {};
   let resultsLength = 0;
-  let resultsLimit = 10;
+  let resultsLimit = 20;
 
   function scheduleRender() {
     if (debounceTimeout) clearTimeout(debounceTimeout);
@@ -176,7 +182,6 @@ document.addEventListener("DOMContentLoaded", function() {
   function setAdaptivePolling(inProgress = false) {
     if (pollInterval) clearInterval(pollInterval);
     pollingFast = inProgress;
-    // Defensive: never poll faster than 1200ms
     pollInterval = setInterval(scheduleRender, inProgress ? 1200 : 3500);
   }
 
@@ -189,7 +194,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const clone = document.importNode(emptyTmpl.content, true);
         while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
         downloadsEl.appendChild(clone);
-        if (typeof localize === "function") localize();
+        if (typeof localizeAll === "function") localizeAll();
       }
       return;
     }
@@ -201,7 +206,7 @@ document.addEventListener("DOMContentLoaded", function() {
       if (iconImg) {
         if (item.state === "in_progress" || item.paused) {
           iconImg.src = DEFAULT_DOWNLOAD_ICON;
-        } else if (chrome?.downloads?.getFileIcon) {
+        } else if (chrome && chrome.downloads && chrome.downloads.getFileIcon) {
           chrome.downloads.getFileIcon(item.id, { size: 32 }, (iconURL) => {
             if (iconURL && iconImg.src !== iconURL) iconImg.src = iconURL;
           });
@@ -218,8 +223,8 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   }
 
-  function render() {
-    if (!chrome?.downloads?.search) return;
+  window.render = function render() {
+    if (!chrome || !chrome.downloads || !chrome.downloads.search) return;
     chrome.downloads.search(
       {
         limit: resultsLimit + 10,
@@ -241,7 +246,7 @@ document.addEventListener("DOMContentLoaded", function() {
             ) &&
             item.exists === false
           ) {
-            try { chrome.downloads.erase({ id: item.id }); } catch (e) {}
+            try { chrome.downloads.erase({ id: item.id }); } catch (e) { }
             return false;
           }
           return true;
@@ -264,7 +269,7 @@ document.addEventListener("DOMContentLoaded", function() {
         if (anyInProgress !== pollingFast) setAdaptivePolling(anyInProgress);
       }
     );
-  }
+  };
 
   function handleClick(event) {
     try {
@@ -272,11 +277,11 @@ document.addEventListener("DOMContentLoaded", function() {
       if (!action) return;
       event.preventDefault();
       if (action === "url") {
-        if (chrome?.tabs?.create) chrome.tabs.create({ url: event.target.href, selected: true });
+        if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: event.target.href, selected: true });
         return;
       }
       if (action === "more") {
-        if (chrome?.tabs?.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
+        if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
         return;
       }
       const $el = event.target.closest(".download");
@@ -299,8 +304,8 @@ document.addEventListener("DOMContentLoaded", function() {
                 return;
               }
               startTimer(new_id);
-              render();
-              setTimeout(render, 400);
+              window.render();
+              setTimeout(window.render, 400);
             });
           }
         });
@@ -310,7 +315,7 @@ document.addEventListener("DOMContentLoaded", function() {
           if ($list) {
             $list.removeChild($el);
             stopTimer(id);
-            render();
+            window.render();
           }
         });
       } else if (action === "show") {
@@ -329,7 +334,7 @@ document.addEventListener("DOMContentLoaded", function() {
         window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
         return;
       }
-      if (results[0]) render();
+      if (results[0]) window.render();
     });
   }
 
@@ -365,22 +370,36 @@ document.addEventListener("DOMContentLoaded", function() {
           const event = results[0];
           if (!event) {
             stopTimer(id);
-            render();
+            window.render();
             return;
           }
           if (event.state === "in_progress" && !event.paused) {
             let speed = 0, bytesReceived = event.bytesReceived || 0, totalBytes = event.totalBytes || 0;
             let speedText = "0 B/s", transferred = Format.toByte(bytesReceived), total = Format.toByte(totalBytes);
-            let left = "";
+            let left = "", timeLeftText = "";
             if (event.estimatedEndTime) {
               const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
               if (remainingSeconds > 0 && totalBytes > 0) {
                 speed = (totalBytes - bytesReceived) / remainingSeconds;
                 speedText = Format.toByte(speed) + "/s";
-                left = `, ${Format.toTime(remainingSeconds)} ${t("left")}`;
+                timeLeftText = Format.toTime(remainingSeconds) + " " + t("left");
+                left = timeLeftText;
               }
             }
-            if ($status) $status.textContent = `${speedText} - ${transferred} of ${total}${left}`;
+            let ofString = t("of");
+            let statusText;
+            if (ofString === "/") {
+              statusText =
+                speedText +
+                (left ? " · " + left : "") +
+                " · " + transferred + " / " + total;
+            } else {
+              statusText =
+                speedText +
+                (left ? " · " + left : "") +
+                " · " + transferred + " " + ofString + " " + total;
+            }
+            if ($status) $status.textContent = statusText;
           } else if (event.state === "complete") {
             if ($status) $status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
             stopTimer(id);
@@ -397,7 +416,7 @@ document.addEventListener("DOMContentLoaded", function() {
         stopTimer(id);
       }
     };
-    timers[id] = setInterval(timer, 1000);
+    timers[id] = setInterval(timer, 1500);
     setTimeout(timer, 1);
   }
 
@@ -427,7 +446,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
   on($("#action-show-all"), "click", () => {
     try {
-      if (chrome?.tabs?.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
+      if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
     } catch (e) {
       window.onerror(e.message, "main.js", 0, 0, e);
     }
@@ -437,7 +456,7 @@ document.addEventListener("DOMContentLoaded", function() {
     try {
       clearAllDownloadsExceptRunning((running) => {
         if (running.length) {
-          render();
+          window.render();
         } else {
           const emptyTmpl = $("#tmpl__state-empty");
           const downloads = $("#downloads");
@@ -446,7 +465,7 @@ document.addEventListener("DOMContentLoaded", function() {
             while (downloads.firstChild) downloads.removeChild(downloads.firstChild);
             downloads.appendChild(clone);
           }
-          if (typeof localize === "function") localize();
+          if (typeof localizeAll === "function") localizeAll();
         }
       });
     } catch (e) {
@@ -456,45 +475,22 @@ document.addEventListener("DOMContentLoaded", function() {
 
   on($("#downloads"), "click", handleClick);
 
-  const langSwitch = document.getElementById('language-switch');
-  if (langSwitch) on(langSwitch, 'change', function() {
-    try {
-      setTimeout(function() {
-        if (typeof App !== "undefined" && App.render) App.render();
-      }, 10);
-      setTimeout(function() {
-        if (typeof localize === "function") localize();
-      }, 20);
-    } catch (e) {
-      window.onerror(e.message, "main.js", 0, 0, e);
-    }
+  on($("#language-switch"), "change", function () {
+    const locale = this.value;
+    if (typeof setLocale === "function") setLocale(locale);
   });
 
-  if (chrome?.runtime?.onMessage) {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      try {
-        if (message.type === "download_created" || message.type === "download_changed") {
-          scheduleRender();
-        }
-        if (sendResponse) sendResponse({ status: "Message received in popup" });
-      } catch (e) {
-        window.onerror(e.message, "main.js", 0, 0, e);
-      }
-    });
-  }
-  if (chrome?.downloads?.onCreated) {
-    chrome.downloads.onCreated.addListener(scheduleRender);
+  // Initial setup after localize.js loads
+  if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
+    const initialLocale = getLocaleFromStorage();
+    setLocale(initialLocale);
   }
 
-  render();
-  setAdaptivePolling();
-  window.addEventListener('unload', function() {
+  window.addEventListener('unload', function () {
     try {
       Object.values(timers).forEach(clearInterval);
       timers = {};
       if (pollInterval) clearInterval(pollInterval);
-      if (chrome?.runtime?.sendMessage) chrome.runtime.sendMessage('popup_closed');
-    } catch (e) {}
+    } catch (e) { }
   });
-  if (chrome?.runtime?.sendMessage) chrome.runtime.sendMessage('popup_open');
 });
