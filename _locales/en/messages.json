@@ -8,7 +8,7 @@
   "retry": { "message": "Retry" },
   "show_in_folder": { "message": "Show in folder" },
   "remove": { "message": "Remove" },
-  "files_will_appear_here": { "message": "Files will appear here" },
+  "files_will_appear_here": { "message": "Files you download will appear here" },
   "left": { "message": "left" },
   "paused": { "message": "Paused" },
   "canceled": { "message": "Canceled" },

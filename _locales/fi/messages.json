@@ -8,7 +8,7 @@
   "retry": { "message": "Yritä uudelleen" },
   "show_in_folder": { "message": "Näytä kansiossa" },
   "remove": { "message": "Poista" },
-  "files_will_appear_here": { "message": "Tiedostot ilmestyvät tähän" },
+  "files_will_appear_here": { "message": "Lataamasi tiedostot ilmestyvät tähän" },
   "left": { "message": "jäljellä" },
   "paused": { "message": "Tauolla" },
   "canceled": { "message": "Peruutettu" },
