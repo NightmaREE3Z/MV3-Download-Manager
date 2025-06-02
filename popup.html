@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Set a fixed viewport width for Chrome popup -->
   <meta name="viewport" content="width=420, initial-scale=1, maximum-scale=1.0, user-scalable=no">
   <title data-i18n="downloads_title">Downloads</title>
   <link rel="shortcut icon" type="image/png" href="icons/iconblue.png">
@@ -27,7 +26,7 @@
 </head>
 <body>
   <nav class="toolbar">
-    <select id="language-switch">
+    <select id="language-switch" autocomplete="off">
       <option value="en">🇬🇧 English</option>
       <option value="fi">🇫🇮 Suomi</option>
     </select>
@@ -37,11 +36,9 @@
       <button id="action-clear-all" class="button button--secondary" data-i18n="clear_list">Clear list</button>
     </div>
   </nav>
-
   <main id="main">
     <section id="downloads" class="list"></section>
   </main>
-
   <template id="tmpl__state-empty">
     <div class="state">
       <div class="state__content">
@@ -55,7 +52,6 @@
       </div>
     </div>
   </template>
-
   <script type="text/javascript" src="js/localize.js"></script>
   <script type="text/javascript" src="js/main.js"></script>
 </body>

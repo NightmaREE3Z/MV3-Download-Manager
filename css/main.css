@@ -5,6 +5,7 @@
 
   /* Light mode defaults */
   --primary-color: #0b57d0;
+  --primary-darker-color: #0a3d91;
   --primary-rgb-color: 11, 87, 208;
   --background-color: #ffffff;
   --background-darker-color: #f2f2f2;
@@ -21,6 +22,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --primary-color: #8ab4f8;
+    --primary-darker-color: #457fbe;
     --primary-rgb-color: 138, 180, 248;
     --background-color: #292a2d;
     --background-darker-color: #202123;

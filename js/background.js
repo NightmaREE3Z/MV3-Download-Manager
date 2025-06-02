@@ -1,7 +1,9 @@
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
+if (chrome?.downloads?.setUiOptions) {
+  chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
+}
 
 let isPopupOpen = false;
 let isUnsafe = false;
@@ -9,8 +11,6 @@ let unseen = [];
 let timer = null;
 let devicePixelRatio = 1;
 let prefersColorSchemeDark = true;
-
-// Track download state for MV3 popup sync
 let downloadsState = {};
 
 chrome.runtime.onStartup?.addListener(() => setDefaultBlueIcon());
@@ -24,7 +24,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendInvalidateGizmo();
     chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
       if (chrome.runtime.lastError) return;
-      // Update downloadsState for MV3 safety
       updateDownloadsState(downloads);
       chrome.runtime.sendMessage({ type: "downloads_state", data: downloads });
     });
@@ -48,7 +47,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-chrome.runtime.onConnect.addListener((externalPort) => {
+chrome.runtime.onConnect?.addListener((externalPort) => {
   externalPort.onDisconnect.addListener(() => {
     isPopupOpen = false;
     refresh();
@@ -59,11 +58,10 @@ chrome.downloads.onCreated.addListener((item) => {
   downloadsState[item.id] = item;
   refresh();
 });
+
 chrome.downloads.onChanged.addListener((event) => {
-  // Partial update for MV3 download state
   if (downloadsState[event.id]) {
     Object.keys(event).forEach((key) => {
-      // For delta style objects: {state: {current: "...", previous: "..."}} etc.
       if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
         downloadsState[event.id][key] = event[key].current;
       } else {
@@ -113,7 +111,6 @@ function refresh() {
     if (inProgressItems.length) {
       if (timer) clearInterval(timer);
       timer = setInterval(refresh, 1000);
-
       let longestItem = { estimatedEndTime: 0 };
       inProgressItems.forEach((item) => {
         const estimatedEndTime = new Date(item.estimatedEndTime);
@@ -164,10 +161,7 @@ function sendMessageToActiveTab(message) {
     tabs.forEach((tab) => {
       if (tab && tab.url && tab.url.startsWith('http')) {
         try {
-          chrome.tabs.sendMessage(tab.id, message, () => {
-            if (chrome.runtime.lastError) {
-            }
-          });
+          chrome.tabs.sendMessage(tab.id, message, () => {});
         } catch (e) {}
       }
     });

@@ -37,10 +37,13 @@ const translations = {
     hours: "tun",
     days: "päiv"
   }
-}
+};
 
 function getBrowserLang() {
-  let navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+  let navLang = "en";
+  try {
+    navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+  } catch (e) {}
   if (navLang.startsWith("fi")) return "fi";
   return "en";
 }
