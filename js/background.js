@@ -1,12 +1,6 @@
-// MV3 Download Manager background script (service worker)
+// MV3 Download Manager background script - robust icon drawing
 
-let canvas = new OffscreenCanvas(38, 38);
-let ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-if (chrome?.downloads?.setUiOptions) {
-  chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
-}
-
+let isPopupOpen = false;
 let isUnsafe = false;
 let unseen = [];
 let timer = null;
@@ -14,14 +8,60 @@ let devicePixelRatio = 1;
 let prefersColorSchemeDark = true;
 let downloadsState = {};
 
-chrome.runtime.onStartup?.addListener(() => setDefaultBlueIcon());
-setDefaultBlueIcon();
+// Utility: Get a fresh canvas/context each time
+function getCanvasContext() {
+  const canvas = new OffscreenCanvas(38, 38);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  return { canvas, ctx };
+}
 
+// Initial icon
+chrome.runtime.onStartup?.addListener(() => forceSyncIcon());
+forceSyncIcon();
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message === 'popup_open') {
+    isPopupOpen = true;
+    unseen = [];
+    refresh();
+    sendInvalidateGizmo();
+    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
+      if (chrome.runtime.lastError) return;
+      updateDownloadsState(downloads);
+      chrome.runtime.sendMessage({ type: "downloads_state", data: downloads });
+    });
+  }
+  if (message === 'popup_closed') {
+    isPopupOpen = false;
+    refresh();
+  }
+  if (typeof message === 'object' && message.type === 'get_downloads_state') {
+    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
+      if (chrome.runtime.lastError) return sendResponse([]);
+      updateDownloadsState(downloads);
+      sendResponse(downloads);
+    });
+    return true;
+  }
+  if (typeof message === 'object' && 'window' in message) {
+    devicePixelRatio = message.window.devicePixelRatio;
+    prefersColorSchemeDark = message.window.prefersColorSchemeDark;
+    refresh();
+  }
+});
+
+chrome.runtime.onConnect?.addListener((externalPort) => {
+  externalPort.onDisconnect.addListener(() => {
+    isPopupOpen = false;
+    refresh();
+  });
+});
+
+// Download event listeners
 chrome.downloads.onCreated.addListener((item) => {
   downloadsState[item.id] = item;
   refresh();
 });
-
 chrome.downloads.onChanged.addListener((event) => {
   if (downloadsState[event.id]) {
     Object.keys(event).forEach((key) => {
@@ -32,7 +72,7 @@ chrome.downloads.onChanged.addListener((event) => {
       }
     });
   }
-  if (event.state && event.state.current === 'complete') {
+  if (event.state && event.state.current === 'complete' && !isPopupOpen) {
     unseen.push(event);
   }
   if (event.state || event.paused) refresh();
@@ -46,7 +86,6 @@ chrome.downloads.onChanged.addListener((event) => {
     refresh();
   }
 });
-
 chrome.downloads.onErased.addListener((id) => {
   delete downloadsState[id];
   chrome.downloads.search({}, (allDownloads) => {
@@ -62,6 +101,14 @@ function updateDownloadsState(downloads) {
   downloadsState = {};
   downloads.forEach((item) => {
     downloadsState[item.id] = item;
+  });
+}
+
+// Defensive: Always sync icon state from downloads
+function forceSyncIcon() {
+  chrome.downloads.search({}, (allDownloads) => {
+    updateDownloadsState(allDownloads);
+    refresh();
   });
 }
 
@@ -108,10 +155,27 @@ function setDefaultBlueIcon() {
 }
 
 function sendShowGizmo() {
-  // Removed messaging, no-op for MV3
+  sendMessageToActiveTab('show_gizmo');
 }
 function sendInvalidateGizmo() {
-  // Removed messaging, no-op for MV3
+  sendMessageToActiveTab('invalidate_gizmo');
+}
+function sendMessageToActiveTab(message) {
+  const current = {
+    active: true,
+    currentWindow: true,
+    windowType: 'normal',
+  };
+  chrome.tabs.query(current, (tabs) => {
+    if (!tabs || !tabs.length) return;
+    tabs.forEach((tab) => {
+      if (tab && tab.url && tab.url.startsWith('http')) {
+        try {
+          chrome.tabs.sendMessage(tab.id, message, () => {});
+        } catch (e) {}
+      }
+    });
+  });
 }
 
 function getScale() {
@@ -122,10 +186,12 @@ function getIconColor(state) {
   if (state === "finished") return "#00CC00";
   return "#00286A";
 }
+
 function drawToolbarIcon(unseen, forceColor) {
+  // Always use a new context!
+  const { canvas, ctx } = getCanvasContext();
   let iconColor = forceColor || getIconColor((unseen && unseen.length > 0) ? "finished" : "default");
   const scale = getScale();
-  const size = 38 * scale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -142,15 +208,21 @@ function drawToolbarIcon(unseen, forceColor) {
   ctx.lineTo(20, 38);
   ctx.fill();
   ctx.restore();
+  const size = 38 * scale;
   const icon = { imageData: {} };
-  icon.imageData[size] = ctx.getImageData(0, 0, size, size);
-  chrome.action.setIcon(icon);
+  try {
+    icon.imageData[size] = ctx.getImageData(0, 0, size, size);
+    chrome.action.setIcon(icon);
+  } catch (e) {
+    // fallback to PNG if drawing fails
+    chrome.action.setIcon({ path: "icons/iconblue.png" });
+  }
 }
+
 function drawToolbarProgressIcon(progress) {
+  const { canvas, ctx } = getCanvasContext();
   const iconColor = getIconColor("inProgress");
   const scale = getScale();
-  const size = 38 * scale;
-  const width = progress * 38;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -159,7 +231,7 @@ function drawToolbarProgressIcon(progress) {
   ctx.fillStyle = iconColor + '40';
   ctx.fillRect(0, 28, 38, 12);
   ctx.fillStyle = iconColor;
-  ctx.fillRect(0, 28, width, 12);
+  ctx.fillRect(0, 28, progress * 38, 12);
   ctx.strokeStyle = iconColor;
   ctx.fillStyle = iconColor;
   ctx.lineWidth = 10;
@@ -172,7 +244,12 @@ function drawToolbarProgressIcon(progress) {
   ctx.lineTo(20, 24);
   ctx.fill();
   ctx.restore();
+  const size = 38 * scale;
   const icon = { imageData: {} };
-  icon.imageData[size] = ctx.getImageData(0, 0, size, size);
-  chrome.action.setIcon(icon);
+  try {
+    icon.imageData[size] = ctx.getImageData(0, 0, size, size);
+    chrome.action.setIcon(icon);
+  } catch (e) {
+    chrome.action.setIcon({ path: "icons/iconblue.png" });
+  }
 }
