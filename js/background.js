@@ -1,7 +1,6 @@
-// MV3 Download Manager background script – ultra-robust, verbose logging, best practices applied
+// MV3 Download Manager background/service worker script
 
-// ========== VERBOSE LOGGING ==========
-console.log("Service worker script loaded at", new Date().toISOString());
+console.info("[SW] Service worker script loaded at", new Date().toISOString());
 
 let canvas, ctx;
 try {
@@ -19,47 +18,49 @@ let prefersColorSchemeDark = true;
 let downloadsState = {};
 let pollTimer = null;
 
-// ========== ERROR HANDLING ==========
-self.addEventListener('error', function(e) {
+self.addEventListener('error', function (e) {
   console.error('[SW] Uncaught error:', e.message, e);
 });
-self.addEventListener('unhandledrejection', function(e) {
+self.addEventListener('unhandledrejection', function (e) {
   console.error('[SW] Unhandled rejection:', e.reason, e);
 });
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+  console.info("[SW] Activated at", new Date().toISOString());
+});
 
-// ========== INITIALIZATION ==========
 function initialize() {
-  console.log("[SW] initialize() called at", new Date().toISOString());
+  console.info("[SW] initialize() called at", new Date().toISOString());
   setDefaultBlueIcon();
   refreshStateAndIcon();
 }
-if (chrome && chrome.runtime && chrome.runtime.onStartup) {
-  chrome.runtime.onStartup.addListener(function() {
-    console.log("[SW] onStartup event fired at", new Date().toISOString());
-    initialize();
-  });
-}
-if (chrome && chrome.runtime && chrome.runtime.onInstalled) {
-  chrome.runtime.onInstalled.addListener(function() {
-    console.log("[SW] onInstalled event fired at", new Date().toISOString());
-    initialize();
-  });
+if (chrome && chrome.runtime) {
+  if (chrome.runtime.onStartup) {
+    chrome.runtime.onStartup.addListener(() => {
+      console.info("[SW] onStartup event fired at", new Date().toISOString());
+      initialize();
+    });
+  }
+  if (chrome.runtime.onInstalled) {
+    chrome.runtime.onInstalled.addListener(() => {
+      console.info("[SW] onInstalled event fired at", new Date().toISOString());
+      initialize();
+    });
+  }
 }
 initialize();
 
-// ========== DOWNLOAD EVENTS ==========
-if (chrome && chrome.downloads && chrome.downloads.onCreated) {
-  chrome.downloads.onCreated.addListener(function(item) {
-    console.log("[SW] downloads.onCreated", item);
+if (chrome && chrome.downloads) {
+  chrome.downloads.onCreated.addListener(item => {
+    console.info("[SW] downloads.onCreated", item);
     downloadsState[item.id] = item;
     refreshStateAndIcon();
   });
-}
-if (chrome && chrome.downloads && chrome.downloads.onChanged) {
-  chrome.downloads.onChanged.addListener(function(event) {
-    console.log("[SW] downloads.onChanged", event);
+
+  chrome.downloads.onChanged.addListener(event => {
+    console.info("[SW] downloads.onChanged", event);
     if (downloadsState[event.id]) {
-      Object.keys(event).forEach(function(key) {
+      Object.keys(event).forEach(key => {
         if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
           downloadsState[event.id][key] = event[key].current;
         } else {
@@ -78,12 +79,11 @@ if (chrome && chrome.downloads && chrome.downloads.onChanged) {
     }
     refreshStateAndIcon();
   });
-}
-if (chrome && chrome.downloads && chrome.downloads.onErased) {
-  chrome.downloads.onErased.addListener(function(id) {
-    console.log("[SW] downloads.onErased", id);
+
+  chrome.downloads.onErased.addListener(id => {
+    console.info("[SW] downloads.onErased", id);
     delete downloadsState[id];
-    chrome.downloads.search({}, function(allDownloads) {
+    chrome.downloads.search({}, allDownloads => {
       if (allDownloads.length === 0) {
         unseen = [];
         setDefaultBlueIcon();
@@ -95,13 +95,20 @@ if (chrome && chrome.downloads && chrome.downloads.onErased) {
   });
 }
 
-// ========== MESSAGE EVENTS ==========
-if (chrome && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
-    console.log("[SW] onMessage received:", message, "at", new Date().toISOString());
+if (chrome && chrome.runtime) {
+  chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+    console.info("[SW] onMessage received:", message, "at", new Date().toISOString(), "sender:", sender);
+
+    let responded = false;
     try {
       if (message && message.type === 'init') {
         sendResponse({ ok: true, time: Date.now() });
+        responded = true;
+        return true;
+      }
+      if (message && message.ping) {
+        sendResponse({ pong: true, time: Date.now() });
+        responded = true;
         return true;
       }
       if (message === 'popup_open') {
@@ -109,10 +116,13 @@ if (chrome && chrome.runtime && chrome.runtime.onMessage) {
         unseen = [];
         refreshStateAndIcon();
         sendInvalidateGizmo();
-        chrome.downloads.search({ orderBy: ["-startTime"] }, function(downloads) {
-          if (chrome.runtime.lastError) return;
+        chrome.downloads.search({ orderBy: ["-startTime"] }, downloads => {
+          if (chrome.runtime.lastError) {
+            console.error("[SW] popup_open: downloads.search error", chrome.runtime.lastError);
+            return;
+          }
           updateDownloadsState(downloads);
-          chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, function() {});
+          chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, function () { });
         });
       }
       if (message === 'popup_closed') {
@@ -120,56 +130,74 @@ if (chrome && chrome.runtime && chrome.runtime.onMessage) {
         refreshStateAndIcon();
       }
       if (typeof message === 'object' && message.type === 'get_downloads_state') {
-        chrome.downloads.search({ orderBy: ["-startTime"] }, function(downloads) {
-          if (chrome.runtime.lastError) return sendResponse([]);
+        chrome.downloads.search({ orderBy: ["-startTime"] }, downloads => {
+          if (chrome.runtime.lastError) {
+            console.error("[SW] get_downloads_state: downloads.search error", chrome.runtime.lastError);
+            sendResponse([]);
+            return;
+          }
           updateDownloadsState(downloads);
           sendResponse(downloads);
         });
+        responded = true;
         return true;
       }
       if (typeof message === 'object' && message.window) {
         devicePixelRatio = message.window.devicePixelRatio;
         prefersColorSchemeDark = message.window.prefersColorSchemeDark;
         refreshStateAndIcon();
+        sendResponse({ ok: true });
+        responded = true;
+        return;
+      }
+      if (!responded && typeof sendResponse === 'function') {
+        sendResponse({ error: "Unknown message", time: Date.now() });
+        responded = true;
+        return;
       }
     } catch (err) {
       console.error("[SW] Error in onMessage:", err);
+      if (!responded) {
+        try { sendResponse({ error: err && err.message }); } catch (e) { }
+      }
     }
+    if (!responded && typeof sendResponse === 'function') {
+      try { sendResponse({ ok: true }); } catch (e) { }
+    }
+    return;
   });
-}
-if (chrome && chrome.runtime && chrome.runtime.onConnect) {
-  chrome.runtime.onConnect.addListener(function(externalPort) {
-    externalPort.onDisconnect.addListener(function() {
+
+  chrome.runtime.onConnect.addListener(function (externalPort) {
+    externalPort.onDisconnect.addListener(function () {
       isPopupOpen = false;
       refreshStateAndIcon();
     });
-    console.log("[SW] onConnect", externalPort);
+    console.info("[SW] onConnect", externalPort);
   });
 }
 
-// ========== ICON & POLLING LOGIC ==========
 function updateDownloadsState(downloads) {
   downloadsState = {};
-  downloads.forEach(function(item) { downloadsState[item.id] = item; });
+  downloads.forEach(item => { downloadsState[item.id] = item; });
 }
 function refreshStateAndIcon() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
   }
-  chrome.downloads.search({}, function(allDownloads) {
+  chrome.downloads.search({}, function (allDownloads) {
     updateDownloadsState(allDownloads);
-    var inProgress = allDownloads.filter(function(d) {
-      return d.state === "in_progress" && !d.paused && d.totalBytes > 0;
-    });
+    const inProgress = allDownloads.filter(d =>
+      d.state === "in_progress" && !d.paused && d.totalBytes > 0
+    );
     if (inProgress.length > 0) {
-      var progressItem = inProgress.reduce(function(latest, item) {
-        var end = new Date(item.estimatedEndTime || 0).getTime();
-        var latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
+      const progressItem = inProgress.reduce((latest, item) => {
+        const end = new Date(item.estimatedEndTime || 0).getTime();
+        const latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
         return end > latestEnd ? item : latest;
       }, inProgress[0]);
       if (progressItem && progressItem.totalBytes > 0) {
-        var progress = progressItem.bytesReceived / progressItem.totalBytes;
+        const progress = progressItem.bytesReceived / progressItem.totalBytes;
         if (progress > 0 && progress < 1) {
           drawToolbarProgressIcon(progress);
           pollTimer = setInterval(refreshStateAndIcon, 1000);
@@ -177,7 +205,7 @@ function refreshStateAndIcon() {
         }
       }
     }
-    if (allDownloads.some(function(item) { return item.state === "complete" && item.exists !== false; })) {
+    if (allDownloads.some(item => item.state === "complete" && item.exists !== false)) {
       drawToolbarIcon(unseen, "#00CC00");
       return;
     }
@@ -188,23 +216,21 @@ function setDefaultBlueIcon() {
   drawToolbarIcon([], "#00286A");
 }
 
-// ========== GIZMO MESSAGING ==========
 function sendShowGizmo() { sendMessageToActiveTab('show_gizmo'); }
 function sendInvalidateGizmo() { sendMessageToActiveTab('invalidate_gizmo'); }
 function sendMessageToActiveTab(message) {
-  chrome.tabs.query({ active: true, currentWindow: true, windowType: 'normal' }, function(tabs) {
+  chrome.tabs.query({ active: true, currentWindow: true, windowType: 'normal' }, function (tabs) {
     if (!tabs || !tabs.length) return;
-    tabs.forEach(function(tab) {
-      if (tab && tab.url && tab.url.indexOf('http') === 0) {
+    tabs.forEach(tab => {
+      if (tab && tab.url && tab.url.startsWith('http')) {
         try {
-          chrome.tabs.sendMessage(tab.id, message, function() {});
-        } catch (e) {}
+          chrome.tabs.sendMessage(tab.id, message, function () { });
+        } catch (e) { }
       }
     });
   });
 }
 
-// ========== ICON DRAWING ==========
 function getScale() { return devicePixelRatio < 2 ? 0.5 : 1; }
 function getIconColor(state) {
   if (state === "inProgress") return "#FFBB00";
@@ -213,9 +239,9 @@ function getIconColor(state) {
 }
 function drawToolbarIcon(unseen, forceColor) {
   if (!ctx) return;
-  var iconColor = forceColor || getIconColor((unseen && unseen.length > 0) ? "finished" : "default");
-  var scale = getScale();
-  var size = 38 * scale;
+  const iconColor = forceColor || getIconColor((unseen && unseen.length > 0) ? "finished" : "default");
+  const scale = getScale();
+  const size = 38 * scale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -232,16 +258,16 @@ function drawToolbarIcon(unseen, forceColor) {
   ctx.lineTo(20, 38);
   ctx.fill();
   ctx.restore();
-  var icon = { imageData: {} };
+  const icon = { imageData: {} };
   icon.imageData[size] = ctx.getImageData(0, 0, size, size);
   chrome.action.setIcon(icon);
 }
 function drawToolbarProgressIcon(progress) {
   if (!ctx) return;
-  var iconColor = getIconColor("inProgress");
-  var scale = getScale();
-  var size = 38 * scale;
-  var width = progress * 38;
+  const iconColor = getIconColor("inProgress");
+  const scale = getScale();
+  const size = 38 * scale;
+  const width = progress * 38;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -263,7 +289,13 @@ function drawToolbarProgressIcon(progress) {
   ctx.lineTo(20, 24);
   ctx.fill();
   ctx.restore();
-  var icon = { imageData: {} };
+  const icon = { imageData: {} };
   icon.imageData[size] = ctx.getImageData(0, 0, size, size);
   chrome.action.setIcon(icon);
 }
+
+self.addEventListener('message', event => {
+  if (event && event.data === 'ping') {
+    event.source && event.source.postMessage('pong');
+  }
+});

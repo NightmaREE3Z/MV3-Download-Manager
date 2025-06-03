@@ -22,9 +22,39 @@
     #main {
       width: 100%;
     }
+    #popup-error-msg {
+      color: #fff;
+      background: #c00;
+      padding: 8px;
+      font-size: 13px;
+      font-family: monospace;
+      z-index: 9999;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      text-align: left;
+      display: none;
+    }
+    #popup-hang-msg {
+      color: #fff;
+      background: #c90;
+      padding: 8px;
+      font-size: 13px;
+      font-family: monospace;
+      z-index: 9999;
+      position: fixed;
+      top: 36px;
+      left: 0;
+      width: 100%;
+      text-align: left;
+      display: none;
+    }
   </style>
 </head>
 <body>
+  <div id="popup-error-msg"></div>
+  <div id="popup-hang-msg"></div>
   <nav class="toolbar">
     <select id="language-switch" autocomplete="off">
       <option value="en">🇬🇧 English</option>
