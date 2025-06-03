@@ -1,5 +1,7 @@
-// MV3 Download Manager background script - defensive and stateless for Chrome 137+
-// Always re-initializes on extension load, refresh, or worker restart
+// MV3 Download Manager background script – ultra-robust, verbose logging, best practices applied
+
+// ========== VERBOSE LOGGING ==========
+console.log("Service worker script loaded at", new Date().toISOString());
 
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -12,29 +14,38 @@ let prefersColorSchemeDark = true;
 let downloadsState = {};
 let pollTimer = null;
 
-// --- Defensive: catch all unhandled errors and log them
+// ========== ERROR HANDLING ==========
 self.addEventListener('error', (e) => {
-  console.error('Background script error:', e.message, e);
+  console.error('[SW] Uncaught error:', e.message, e);
 });
 self.addEventListener('unhandledrejection', (e) => {
-  console.error('Background script unhandled rejection:', e.reason, e);
+  console.error('[SW] Unhandled rejection:', e.reason, e);
 });
 
-// --- Initialization ---
+// ========== INITIALIZATION ==========
 function initialize() {
+  console.log("[SW] initialize() called at", new Date().toISOString());
   setDefaultBlueIcon();
   refreshStateAndIcon();
 }
-chrome.runtime.onStartup?.addListener(() => initialize());
-chrome.runtime.onInstalled?.addListener(() => initialize());
+chrome.runtime.onStartup?.addListener(() => {
+  console.log("[SW] onStartup event fired at", new Date().toISOString());
+  initialize();
+});
+chrome.runtime.onInstalled?.addListener(() => {
+  console.log("[SW] onInstalled event fired at", new Date().toISOString());
+  initialize();
+});
 initialize();
 
-// --- Download Events ---
+// ========== DOWNLOAD EVENTS ==========
 chrome.downloads.onCreated.addListener((item) => {
+  console.log("[SW] downloads.onCreated", item);
   downloadsState[item.id] = item;
   refreshStateAndIcon();
 });
 chrome.downloads.onChanged.addListener((event) => {
+  console.log("[SW] downloads.onChanged", event);
   if (downloadsState[event.id]) {
     Object.keys(event).forEach((key) => {
       if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
@@ -47,7 +58,7 @@ chrome.downloads.onChanged.addListener((event) => {
   if (event.state && event.state.current === 'complete' && !isPopupOpen) {
     unseen.push(event);
   }
-  if (event.danger && event.danger.current != 'accepted') {
+  if (event.danger && event.danger.current !== 'accepted') {
     isUnsafe = true;
   }
   if (event.danger && event.danger.current === 'accepted') {
@@ -56,6 +67,7 @@ chrome.downloads.onChanged.addListener((event) => {
   refreshStateAndIcon();
 });
 chrome.downloads.onErased.addListener((id) => {
+  console.log("[SW] downloads.onErased", id);
   delete downloadsState[id];
   chrome.downloads.search({}, (allDownloads) => {
     if (allDownloads.length === 0) {
@@ -68,35 +80,44 @@ chrome.downloads.onErased.addListener((id) => {
   });
 });
 
-// --- Popup/Message Events ---
+// ========== MESSAGE EVENTS ==========
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message === 'popup_open') {
-    isPopupOpen = true;
-    unseen = [];
-    refreshStateAndIcon();
-    sendInvalidateGizmo();
-    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-      if (chrome.runtime.lastError) return;
-      updateDownloadsState(downloads);
-      chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {});
-    });
-  }
-  if (message === 'popup_closed') {
-    isPopupOpen = false;
-    refreshStateAndIcon();
-  }
-  if (typeof message === 'object' && message.type === 'get_downloads_state') {
-    chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-      if (chrome.runtime.lastError) return sendResponse([]);
-      updateDownloadsState(downloads);
-      sendResponse(downloads);
-    });
-    return true;
-  }
-  if (typeof message === 'object' && 'window' in message) {
-    devicePixelRatio = message.window.devicePixelRatio;
-    prefersColorSchemeDark = message.window.prefersColorSchemeDark;
-    refreshStateAndIcon();
+  console.log("[SW] onMessage received:", message, "at", new Date().toISOString());
+  try {
+    if (message && message.type === 'init') {
+      sendResponse({ ok: true, time: Date.now() });
+      return true;
+    }
+    if (message === 'popup_open') {
+      isPopupOpen = true;
+      unseen = [];
+      refreshStateAndIcon();
+      sendInvalidateGizmo();
+      chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
+        if (chrome.runtime.lastError) return;
+        updateDownloadsState(downloads);
+        chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {});
+      });
+    }
+    if (message === 'popup_closed') {
+      isPopupOpen = false;
+      refreshStateAndIcon();
+    }
+    if (typeof message === 'object' && message.type === 'get_downloads_state') {
+      chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
+        if (chrome.runtime.lastError) return sendResponse([]);
+        updateDownloadsState(downloads);
+        sendResponse(downloads);
+      });
+      return true;
+    }
+    if (typeof message === 'object' && 'window' in message) {
+      devicePixelRatio = message.window.devicePixelRatio;
+      prefersColorSchemeDark = message.window.prefersColorSchemeDark;
+      refreshStateAndIcon();
+    }
+  } catch (err) {
+    console.error("[SW] Error in onMessage:", err);
   }
 });
 chrome.runtime.onConnect?.addListener((externalPort) => {
@@ -104,9 +125,10 @@ chrome.runtime.onConnect?.addListener((externalPort) => {
     isPopupOpen = false;
     refreshStateAndIcon();
   });
+  console.log("[SW] onConnect", externalPort);
 });
 
-// --- Main Icon & Polling Logic ---
+// ========== ICON & POLLING LOGIC ==========
 function updateDownloadsState(downloads) {
   downloadsState = {};
   downloads.forEach((item) => { downloadsState[item.id] = item; });
@@ -147,7 +169,7 @@ function setDefaultBlueIcon() {
   drawToolbarIcon([], "#00286A");
 }
 
-// --- Gizmo Messaging ---
+// ========== GIZMO MESSAGING ==========
 function sendShowGizmo() { sendMessageToActiveTab('show_gizmo'); }
 function sendInvalidateGizmo() { sendMessageToActiveTab('invalidate_gizmo'); }
 function sendMessageToActiveTab(message) {
@@ -163,7 +185,7 @@ function sendMessageToActiveTab(message) {
   });
 }
 
-// --- Icon Drawing ---
+// ========== ICON DRAWING ==========
 function getScale() { return devicePixelRatio < 2 ? 0.5 : 1; }
 function getIconColor(state) {
   if (state === "inProgress") return "#FFBB00";

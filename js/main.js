@@ -1,4 +1,4 @@
-// MV3 Download Manager popup script – robust, shows error if background is unresponsive
+// MV3 Download Manager popup script – robust, best practices, verbose logging, with retry and error handling
 
 window.onerror = function (message, source, lineno, colno, error) {
   showPopupError("Popup Error: " + message);
@@ -15,6 +15,7 @@ function showPopupError(msg) {
     document.body.appendChild(errBox);
   }
   errBox.textContent = msg;
+  console.error(msg);
 }
 
 function $(selector) {
@@ -47,6 +48,14 @@ const Format = {
 
 const DEFAULT_DOWNLOAD_ICON =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0'/></g></svg>";
+
+function getProperFilename(filename) {
+  const backArray = filename.split("\\");
+  const forwardArray = filename.split("/");
+  const array = backArray.length > forwardArray.length ? backArray : forwardArray;
+  return array.pop().replace(/.crdownload$/, "");
+}
+window.App = { getProperFilename };
 
 const Template = {
   button(type, action, text) {
@@ -189,7 +198,23 @@ function withTimeout(fn, ms = 2000) {
   });
 }
 
+async function robustDownloadSearch(options, maxRetries = 2) {
+  let tries = 0;
+  while (tries <= maxRetries) {
+    try {
+      console.log("Popup: downloads.search try", tries, "at", Date.now());
+      return await withTimeout(cb => chrome.downloads.search(options, cb), 2000);
+    } catch (e) {
+      console.warn("Popup: downloads.search attempt", tries, "failed:", e.message);
+      tries++;
+      if (tries > maxRetries) throw e;
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+}
+
 document.addEventListener("DOMContentLoaded", function () {
+  console.log("Popup DOMContentLoaded at", Date.now());
   let debounceTimeout = null;
   let pollInterval = null;
   let pollingFast = false;
@@ -246,58 +271,54 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  window.render = function render() {
-    // Use a 2s timeout: if the background is dead, show error
-    withTimeout(cb => {
-      chrome.downloads.search(
+  window.render = async function render() {
+    try {
+      const data = await robustDownloadSearch(
         {
           limit: resultsLimit + 10,
           filenameRegex: ".+",
           orderBy: ["-startTime"]
         },
-        cb
+        2
       );
-    }, 2000)
-      .then((data) => {
-        if (chrome.runtime.lastError) {
-          showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-          return;
+      if (chrome.runtime.lastError) {
+        showPopupError("Popup Error: " + chrome.runtime.lastError.message);
+        return;
+      }
+      let filtered = data.filter(item => {
+        if (
+          item.state === "interrupted" &&
+          (
+            item.error === "USER_CANCELED" ||
+            item.error === "USER_CANCELLED" ||
+            item.error === "CANCELED"
+          ) &&
+          item.exists === false
+        ) {
+          try { chrome.downloads.erase({ id: item.id }); } catch (e) { }
+          return false;
         }
-        data = data.filter(item => {
-          if (
-            item.state === "interrupted" &&
-            (
-              item.error === "USER_CANCELED" ||
-              item.error === "USER_CANCELLED" ||
-              item.error === "CANCELED"
-            ) &&
-            item.exists === false
-          ) {
-            try { chrome.downloads.erase({ id: item.id }); } catch (e) { }
-            return false;
-          }
-          return true;
-        });
-
-        data.sort((a, b) => {
-          if (a.filename === b.filename) {
-            if (a.state === "in_progress" && b.state === "interrupted") return -1;
-            if (a.state === "interrupted" && b.state === "in_progress") return 1;
-            if (a.state === "complete" && b.state === "interrupted") return -1;
-            if (a.state === "interrupted" && b.state === "complete") return 1;
-            return new Date(b.startTime) - new Date(a.startTime);
-          }
-          return new Date(b.startTime) - new Date(a.startTime);
-        });
-
-        resultsLength = data.length;
-        updateDownloadsView(data.slice(0, resultsLimit));
-        const anyInProgress = data.some(d => d.state === "in_progress" && !d.paused);
-        if (anyInProgress !== pollingFast) setAdaptivePolling(anyInProgress);
-      })
-      .catch((err) => {
-        showPopupError("Failed to contact background script. Try reloading extension.\n\n" + err.message);
+        return true;
       });
+
+      filtered.sort((a, b) => {
+        if (a.filename === b.filename) {
+          if (a.state === "in_progress" && b.state === "interrupted") return -1;
+          if (a.state === "interrupted" && b.state === "in_progress") return 1;
+          if (a.state === "complete" && b.state === "interrupted") return -1;
+          if (a.state === "interrupted" && b.state === "complete") return 1;
+          return new Date(b.startTime) - new Date(a.startTime);
+        }
+        return new Date(b.startTime) - new Date(a.startTime);
+      });
+
+      resultsLength = filtered.length;
+      updateDownloadsView(filtered.slice(0, resultsLimit));
+      const anyInProgress = filtered.some(d => d.state === "in_progress" && !d.paused);
+      if (anyInProgress !== pollingFast) setAdaptivePolling(anyInProgress);
+    } catch (err) {
+      showPopupError("Failed to contact background script. Try reloading extension.\n\n" + err.message);
+    }
   };
 
   function handleClick(event) {
@@ -456,14 +477,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  function getProperFilename(filename) {
-    const backArray = filename.split("\\");
-    const forwardArray = filename.split("/");
-    const array = backArray.length > forwardArray.length ? backArray : forwardArray;
-    return array.pop().replace(/.crdownload$/, "");
-  }
-  window.App = { getProperFilename };
-
   on($("#main"), "scroll", () => {
     try {
       const toolbar = $(".toolbar");
@@ -509,7 +522,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (typeof setLocale === "function") setLocale(locale);
   });
 
-  // Defensive handling for messaging, as this can cause the "Receiving end does not exist" error:
   function sendMessageDefensively(message, callback) {
     chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
@@ -520,7 +532,6 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // Initial setup after localize.js loads
   if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
     const initialLocale = getLocaleFromStorage();
     setLocale(initialLocale);
@@ -534,6 +545,5 @@ document.addEventListener("DOMContentLoaded", function () {
     } catch (e) { }
   });
 
-  // Render immediately on popup open, with timeout error if background is unresponsive
   window.render();
 });
