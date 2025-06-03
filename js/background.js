@@ -1,43 +1,57 @@
-// MV3 Download Manager background script (service worker) - v8 with yellow progress icon and robust messaging error handling
+// MV3 Download Manager background script (service worker) - event-driven, no polling, robust
 
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-if (chrome?.downloads?.setUiOptions) {
-  chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
-}
-
 let isPopupOpen = false;
 let isUnsafe = false;
 let unseen = [];
-let timer = null;
 let devicePixelRatio = 1;
 let prefersColorSchemeDark = true;
 let downloadsState = {};
 
-chrome.runtime.onStartup?.addListener(() => setDefaultBlueIcon());
-setDefaultBlueIcon();
+function hideNativeDownloadBar() {
+  if (chrome?.downloads?.setUiOptions) {
+    chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
+  }
+}
 
+// Call on startup and after any event that could restart the worker
+function initialize() {
+  hideNativeDownloadBar();
+  setDefaultBlueIcon();
+  refreshStateAndIcon();
+}
+
+chrome.runtime.onStartup?.addListener(() => {
+  initialize();
+});
+initialize();
+
+chrome.runtime.onInstalled?.addListener(() => {
+  initialize();
+});
+
+// Event: user opens popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message === 'popup_open') {
     isPopupOpen = true;
     unseen = [];
-    refresh();
+    refreshStateAndIcon();
     sendInvalidateGizmo();
+    hideNativeDownloadBar();
     chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
       if (chrome.runtime.lastError) return;
       updateDownloadsState(downloads);
-      // Defensive: handle error for sendMessage
       chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {
-        if (chrome.runtime.lastError) {
-          // Silently ignore error; means receiver (popup) closed or not listening
-        }
+        if (chrome.runtime.lastError) { /* ignore */ }
       });
     });
   }
   if (message === 'popup_closed') {
     isPopupOpen = false;
-    refresh();
+    refreshStateAndIcon();
+    hideNativeDownloadBar();
   }
   if (typeof message === 'object' && message.type === 'get_downloads_state') {
     chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
@@ -50,23 +64,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (typeof message === 'object' && 'window' in message) {
     devicePixelRatio = message.window.devicePixelRatio;
     prefersColorSchemeDark = message.window.prefersColorSchemeDark;
-    refresh();
+    refreshStateAndIcon();
+    hideNativeDownloadBar();
   }
 });
 
 chrome.runtime.onConnect?.addListener((externalPort) => {
   externalPort.onDisconnect.addListener(() => {
     isPopupOpen = false;
-    refresh();
+    refreshStateAndIcon();
+    hideNativeDownloadBar();
   });
 });
 
 chrome.downloads.onCreated.addListener((item) => {
   downloadsState[item.id] = item;
-  refresh();
+  hideNativeDownloadBar();
+  refreshStateAndIcon();
 });
 
 chrome.downloads.onChanged.addListener((event) => {
+  hideNativeDownloadBar();
   if (downloadsState[event.id]) {
     Object.keys(event).forEach((key) => {
       if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
@@ -79,25 +97,26 @@ chrome.downloads.onChanged.addListener((event) => {
   if (event.state && event.state.current === 'complete' && !isPopupOpen) {
     unseen.push(event);
   }
-  if (event.state || event.paused) refresh();
   if (event.filename && event.filename.previous === '') sendShowGizmo();
   if (event.danger && event.danger.current != 'accepted') {
     isUnsafe = true;
-    refresh();
   }
   if (event.danger && event.danger.current === 'accepted') {
     isUnsafe = false;
-    refresh();
   }
+  refreshStateAndIcon();
 });
 
 chrome.downloads.onErased.addListener((id) => {
   delete downloadsState[id];
+  hideNativeDownloadBar();
   chrome.downloads.search({}, (allDownloads) => {
     if (allDownloads.length === 0) {
       unseen = [];
       setDefaultBlueIcon();
-      refresh();
+      refreshStateAndIcon();
+    } else {
+      refreshStateAndIcon();
     }
   });
 });
@@ -109,33 +128,31 @@ function updateDownloadsState(downloads) {
   });
 }
 
-function refresh() {
+// Only update icon and state on events, not polling
+function refreshStateAndIcon() {
+  hideNativeDownloadBar();
   chrome.downloads.search({}, (allDownloads) => {
     updateDownloadsState(allDownloads);
     const inProgressItems = allDownloads.filter(
       d => d.state === "in_progress" && !d.paused && d.totalBytes > 0
     );
     if (inProgressItems.length) {
-      if (timer) clearInterval(timer);
-      timer = setInterval(refresh, 1000);
-      let longestItem = { estimatedEndTime: 0 };
+      // Show progress icon for the download with latest estimatedEndTime
+      let latestEndTime = 0;
+      let progressItem = null;
       inProgressItems.forEach((item) => {
-        const estimatedEndTime = new Date(item.estimatedEndTime);
-        const longestEndTime = new Date(longestItem.estimatedEndTime);
-        if (estimatedEndTime > longestEndTime) longestItem = item;
+        const endTime = new Date(item.estimatedEndTime || 0).getTime();
+        if (endTime > latestEndTime) {
+          latestEndTime = endTime;
+          progressItem = item;
+        }
       });
-      const progress =
-        longestItem.totalBytes > 0
-          ? longestItem.bytesReceived / longestItem.totalBytes
-          : 0;
-      if (progress > 0 && progress < 1) {
-        drawToolbarProgressIcon(progress);
-        return;
-      }
-    } else {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
+      if (progressItem && progressItem.totalBytes > 0) {
+        const progress = progressItem.bytesReceived / progressItem.totalBytes;
+        if (progress > 0 && progress < 1) {
+          drawToolbarProgressIcon(progress);
+          return;
+        }
       }
     }
     const someComplete = allDownloads.some(item => item.state === "complete" && item.exists !== false);
@@ -169,9 +186,7 @@ function sendMessageToActiveTab(message) {
       if (tab && tab.url && tab.url.startsWith('http')) {
         try {
           chrome.tabs.sendMessage(tab.id, message, () => {
-            if (chrome.runtime.lastError) {
-              // Silently ignore error if no receiving end
-            }
+            if (chrome.runtime.lastError) { /* ignore */ }
           });
         } catch (e) {}
       }
