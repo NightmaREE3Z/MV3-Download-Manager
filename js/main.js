@@ -1,4 +1,11 @@
+// MV3 Download Manager popup script – robust, shows error if background is unresponsive
+
 window.onerror = function (message, source, lineno, colno, error) {
+  showPopupError("Popup Error: " + message);
+  return false;
+};
+
+function showPopupError(msg) {
   let errBox = document.getElementById("popup-error-msg");
   if (!errBox) {
     errBox = document.createElement("div");
@@ -7,9 +14,8 @@ window.onerror = function (message, source, lineno, colno, error) {
       "color:#fff;background:#c00;padding:8px;font-size:13px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;width:100%;text-align:left;";
     document.body.appendChild(errBox);
   }
-  errBox.textContent = "Popup Error: " + message;
-  return false;
-};
+  errBox.textContent = msg;
+}
 
 function $(selector) {
   return document.querySelector(selector);
@@ -164,6 +170,25 @@ const Template = {
   }
 };
 
+function withTimeout(fn, ms = 2000) {
+  let done = false;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        reject(new Error("No response from background (timeout)."));
+      }
+    }, ms);
+    fn((...args) => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve(...args);
+      }
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", function () {
   let debounceTimeout = null;
   let pollInterval = null;
@@ -174,7 +199,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function scheduleRender() {
     if (debounceTimeout) clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(window.render, 200);
+    debounceTimeout = setTimeout(render, 200);
   }
 
   function setAdaptivePolling(inProgress = false) {
@@ -222,16 +247,20 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   window.render = function render() {
-    if (!chrome || !chrome.downloads || !chrome.downloads.search) return;
-    chrome.downloads.search(
-      {
-        limit: resultsLimit + 10,
-        filenameRegex: ".+",
-        orderBy: ["-startTime"]
-      },
-      (data) => {
+    // Use a 2s timeout: if the background is dead, show error
+    withTimeout(cb => {
+      chrome.downloads.search(
+        {
+          limit: resultsLimit + 10,
+          filenameRegex: ".+",
+          orderBy: ["-startTime"]
+        },
+        cb
+      );
+    }, 2000)
+      .then((data) => {
         if (chrome.runtime.lastError) {
-          window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
+          showPopupError("Popup Error: " + chrome.runtime.lastError.message);
           return;
         }
         data = data.filter(item => {
@@ -265,8 +294,10 @@ document.addEventListener("DOMContentLoaded", function () {
         updateDownloadsView(data.slice(0, resultsLimit));
         const anyInProgress = data.some(d => d.state === "in_progress" && !d.paused);
         if (anyInProgress !== pollingFast) setAdaptivePolling(anyInProgress);
-      }
-    );
+      })
+      .catch((err) => {
+        showPopupError("Failed to contact background script. Try reloading extension.\n\n" + err.message);
+      });
   };
 
   function handleClick(event) {
@@ -292,13 +323,13 @@ document.addEventListener("DOMContentLoaded", function () {
       } else if (action === "retry") {
         chrome.downloads.search({ id: id }, (results) => {
           if (chrome.runtime.lastError) {
-            window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
+            showPopupError("Popup Error: " + chrome.runtime.lastError.message);
             return;
           }
           if (results[0]) {
             chrome.downloads.download({ url: results[0].url }, (new_id) => {
               if (chrome.runtime.lastError) {
-                window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
+                showPopupError("Popup Error: " + chrome.runtime.lastError.message);
                 return;
               }
               startTimer(new_id);
@@ -322,14 +353,14 @@ document.addEventListener("DOMContentLoaded", function () {
         chrome.downloads.open(id);
       }
     } catch (e) {
-      window.onerror(e.message, "main.js", 0, 0, e);
+      showPopupError("Popup Error: " + e.message);
     }
   }
 
   function refreshDownloadView(id) {
     chrome.downloads.search({ id: id }, (results) => {
       if (chrome.runtime.lastError) {
-        window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
+        showPopupError("Popup Error: " + chrome.runtime.lastError.message);
         return;
       }
       if (results[0]) window.render();
@@ -339,7 +370,7 @@ document.addEventListener("DOMContentLoaded", function () {
   function clearAllDownloadsExceptRunning(callback) {
     chrome.downloads.search({}, (results) => {
       if (chrome.runtime.lastError) {
-        window.onerror(chrome.runtime.lastError.message, "main.js", 0, 0, chrome.runtime.lastError);
+        showPopupError("Popup Error: " + chrome.runtime.lastError.message);
         return;
       }
       const running = results.filter((item) => item.state === "in_progress");
@@ -410,7 +441,7 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         });
       } catch (e) {
-        window.onerror(e.message, "main.js", 0, 0, e);
+        showPopupError("Popup Error: " + e.message);
         stopTimer(id);
       }
     };
@@ -438,7 +469,7 @@ document.addEventListener("DOMContentLoaded", function () {
       const toolbar = $(".toolbar");
       if (toolbar) toolbar.classList.toggle("toolbar--fixed", $("#main").scrollTop > 0);
     } catch (e) {
-      window.onerror(e.message, "main.js", 0, 0, e);
+      showPopupError("Popup Error: " + e.message);
     }
   });
 
@@ -446,7 +477,7 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
     } catch (e) {
-      window.onerror(e.message, "main.js", 0, 0, e);
+      showPopupError("Popup Error: " + e.message);
     }
   });
 
@@ -467,7 +498,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
       });
     } catch (e) {
-      window.onerror(e.message, "main.js", 0, 0, e);
+      showPopupError("Popup Error: " + e.message);
     }
   });
 
@@ -482,14 +513,12 @@ document.addEventListener("DOMContentLoaded", function () {
   function sendMessageDefensively(message, callback) {
     chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
-        // Silently ignore the error, as it usually means the popup/background isn't listening
+        showPopupError("Popup Error: " + chrome.runtime.lastError.message);
         return;
       }
       if (callback) callback(response);
     });
   }
-  // Example usage:
-  // sendMessageDefensively({foo: "bar"}, (response) => { ... });
 
   // Initial setup after localize.js loads
   if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
@@ -504,4 +533,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (pollInterval) clearInterval(pollInterval);
     } catch (e) { }
   });
+
+  // Render immediately on popup open, with timeout error if background is unresponsive
+  window.render();
 });

@@ -1,4 +1,5 @@
-// MV3 Download Manager background script (service worker) - event-driven, no polling, robust
+// MV3 Download Manager background script - defensive and stateless for Chrome 137+
+// Always re-initializes on extension load, refresh, or worker restart
 
 let canvas = new OffscreenCanvas(38, 38);
 let ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -9,49 +10,80 @@ let unseen = [];
 let devicePixelRatio = 1;
 let prefersColorSchemeDark = true;
 let downloadsState = {};
+let pollTimer = null;
 
-function hideNativeDownloadBar() {
-  if (chrome?.downloads?.setUiOptions) {
-    chrome.downloads.setUiOptions({ enabled: false }).catch(() => {});
-  }
-}
+// --- Defensive: catch all unhandled errors and log them
+self.addEventListener('error', (e) => {
+  console.error('Background script error:', e.message, e);
+});
+self.addEventListener('unhandledrejection', (e) => {
+  console.error('Background script unhandled rejection:', e.reason, e);
+});
 
-// Call on startup and after any event that could restart the worker
+// --- Initialization ---
 function initialize() {
-  hideNativeDownloadBar();
   setDefaultBlueIcon();
   refreshStateAndIcon();
 }
-
-chrome.runtime.onStartup?.addListener(() => {
-  initialize();
-});
+chrome.runtime.onStartup?.addListener(() => initialize());
+chrome.runtime.onInstalled?.addListener(() => initialize());
 initialize();
 
-chrome.runtime.onInstalled?.addListener(() => {
-  initialize();
+// --- Download Events ---
+chrome.downloads.onCreated.addListener((item) => {
+  downloadsState[item.id] = item;
+  refreshStateAndIcon();
+});
+chrome.downloads.onChanged.addListener((event) => {
+  if (downloadsState[event.id]) {
+    Object.keys(event).forEach((key) => {
+      if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
+        downloadsState[event.id][key] = event[key].current;
+      } else {
+        downloadsState[event.id][key] = event[key];
+      }
+    });
+  }
+  if (event.state && event.state.current === 'complete' && !isPopupOpen) {
+    unseen.push(event);
+  }
+  if (event.danger && event.danger.current != 'accepted') {
+    isUnsafe = true;
+  }
+  if (event.danger && event.danger.current === 'accepted') {
+    isUnsafe = false;
+  }
+  refreshStateAndIcon();
+});
+chrome.downloads.onErased.addListener((id) => {
+  delete downloadsState[id];
+  chrome.downloads.search({}, (allDownloads) => {
+    if (allDownloads.length === 0) {
+      unseen = [];
+      setDefaultBlueIcon();
+      refreshStateAndIcon();
+    } else {
+      refreshStateAndIcon();
+    }
+  });
 });
 
-// Event: user opens popup
+// --- Popup/Message Events ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message === 'popup_open') {
     isPopupOpen = true;
     unseen = [];
     refreshStateAndIcon();
     sendInvalidateGizmo();
-    hideNativeDownloadBar();
     chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
       if (chrome.runtime.lastError) return;
       updateDownloadsState(downloads);
-      chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {
-        if (chrome.runtime.lastError) { /* ignore */ }
-      });
+      chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {});
     });
   }
   if (message === 'popup_closed') {
     isPopupOpen = false;
     refreshStateAndIcon();
-    hideNativeDownloadBar();
   }
   if (typeof message === 'object' && message.type === 'get_downloads_state') {
     chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
@@ -65,138 +97,74 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     devicePixelRatio = message.window.devicePixelRatio;
     prefersColorSchemeDark = message.window.prefersColorSchemeDark;
     refreshStateAndIcon();
-    hideNativeDownloadBar();
   }
 });
-
 chrome.runtime.onConnect?.addListener((externalPort) => {
   externalPort.onDisconnect.addListener(() => {
     isPopupOpen = false;
     refreshStateAndIcon();
-    hideNativeDownloadBar();
   });
 });
 
-chrome.downloads.onCreated.addListener((item) => {
-  downloadsState[item.id] = item;
-  hideNativeDownloadBar();
-  refreshStateAndIcon();
-});
-
-chrome.downloads.onChanged.addListener((event) => {
-  hideNativeDownloadBar();
-  if (downloadsState[event.id]) {
-    Object.keys(event).forEach((key) => {
-      if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
-        downloadsState[event.id][key] = event[key].current;
-      } else {
-        downloadsState[event.id][key] = event[key];
-      }
-    });
-  }
-  if (event.state && event.state.current === 'complete' && !isPopupOpen) {
-    unseen.push(event);
-  }
-  if (event.filename && event.filename.previous === '') sendShowGizmo();
-  if (event.danger && event.danger.current != 'accepted') {
-    isUnsafe = true;
-  }
-  if (event.danger && event.danger.current === 'accepted') {
-    isUnsafe = false;
-  }
-  refreshStateAndIcon();
-});
-
-chrome.downloads.onErased.addListener((id) => {
-  delete downloadsState[id];
-  hideNativeDownloadBar();
-  chrome.downloads.search({}, (allDownloads) => {
-    if (allDownloads.length === 0) {
-      unseen = [];
-      setDefaultBlueIcon();
-      refreshStateAndIcon();
-    } else {
-      refreshStateAndIcon();
-    }
-  });
-});
-
+// --- Main Icon & Polling Logic ---
 function updateDownloadsState(downloads) {
   downloadsState = {};
-  downloads.forEach((item) => {
-    downloadsState[item.id] = item;
-  });
+  downloads.forEach((item) => { downloadsState[item.id] = item; });
 }
-
-// Only update icon and state on events, not polling
 function refreshStateAndIcon() {
-  hideNativeDownloadBar();
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
   chrome.downloads.search({}, (allDownloads) => {
     updateDownloadsState(allDownloads);
-    const inProgressItems = allDownloads.filter(
+    const inProgress = allDownloads.filter(
       d => d.state === "in_progress" && !d.paused && d.totalBytes > 0
     );
-    if (inProgressItems.length) {
-      // Show progress icon for the download with latest estimatedEndTime
-      let latestEndTime = 0;
-      let progressItem = null;
-      inProgressItems.forEach((item) => {
-        const endTime = new Date(item.estimatedEndTime || 0).getTime();
-        if (endTime > latestEndTime) {
-          latestEndTime = endTime;
-          progressItem = item;
-        }
-      });
+    if (inProgress.length > 0) {
+      let progressItem = inProgress.reduce((latest, item) => {
+        const end = new Date(item.estimatedEndTime || 0).getTime();
+        const latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
+        return end > latestEnd ? item : latest;
+      }, inProgress[0]);
       if (progressItem && progressItem.totalBytes > 0) {
         const progress = progressItem.bytesReceived / progressItem.totalBytes;
         if (progress > 0 && progress < 1) {
           drawToolbarProgressIcon(progress);
+          pollTimer = setInterval(refreshStateAndIcon, 1000);
           return;
         }
       }
     }
-    const someComplete = allDownloads.some(item => item.state === "complete" && item.exists !== false);
-    if (someComplete) {
+    if (allDownloads.some(item => item.state === "complete" && item.exists !== false)) {
       drawToolbarIcon(unseen, "#00CC00");
       return;
     }
     setDefaultBlueIcon();
   });
 }
-
 function setDefaultBlueIcon() {
   drawToolbarIcon([], "#00286A");
 }
 
-function sendShowGizmo() {
-  sendMessageToActiveTab('show_gizmo');
-}
-function sendInvalidateGizmo() {
-  sendMessageToActiveTab('invalidate_gizmo');
-}
+// --- Gizmo Messaging ---
+function sendShowGizmo() { sendMessageToActiveTab('show_gizmo'); }
+function sendInvalidateGizmo() { sendMessageToActiveTab('invalidate_gizmo'); }
 function sendMessageToActiveTab(message) {
-  const current = {
-    active: true,
-    currentWindow: true,
-    windowType: 'normal',
-  };
-  chrome.tabs.query(current, (tabs) => {
+  chrome.tabs.query({ active: true, currentWindow: true, windowType: 'normal' }, (tabs) => {
     if (!tabs || !tabs.length) return;
     tabs.forEach((tab) => {
       if (tab && tab.url && tab.url.startsWith('http')) {
         try {
-          chrome.tabs.sendMessage(tab.id, message, () => {
-            if (chrome.runtime.lastError) { /* ignore */ }
-          });
+          chrome.tabs.sendMessage(tab.id, message, () => {});
         } catch (e) {}
       }
     });
   });
 }
 
-function getScale() {
-  return devicePixelRatio < 2 ? 0.5 : 1;
-}
+// --- Icon Drawing ---
+function getScale() { return devicePixelRatio < 2 ? 0.5 : 1; }
 function getIconColor(state) {
   if (state === "inProgress") return "#FFBB00";
   if (state === "finished") return "#00CC00";
