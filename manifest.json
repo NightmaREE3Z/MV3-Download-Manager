@@ -1,7 +1,7 @@
 {
   "name": "MV3 Download Manager",
   "short_name": "MV3DLManager",
-  "version": "6.3",
+  "version": "7.0",
   "manifest_version": 3,
   "description": "A clean and modern download manager for your everyday download tasks in two languages.",
   "background": {
