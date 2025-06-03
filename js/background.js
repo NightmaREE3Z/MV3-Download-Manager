@@ -3,8 +3,13 @@
 // ========== VERBOSE LOGGING ==========
 console.log("Service worker script loaded at", new Date().toISOString());
 
-let canvas = new OffscreenCanvas(38, 38);
-let ctx = canvas.getContext('2d', { willReadFrequently: true });
+let canvas, ctx;
+try {
+  canvas = new OffscreenCanvas(38, 38);
+  ctx = canvas.getContext('2d', { willReadFrequently: true });
+} catch (e) {
+  console.error("[SW] Canvas init error:", e);
+}
 
 let isPopupOpen = false;
 let isUnsafe = false;
@@ -15,10 +20,10 @@ let downloadsState = {};
 let pollTimer = null;
 
 // ========== ERROR HANDLING ==========
-self.addEventListener('error', (e) => {
+self.addEventListener('error', function(e) {
   console.error('[SW] Uncaught error:', e.message, e);
 });
-self.addEventListener('unhandledrejection', (e) => {
+self.addEventListener('unhandledrejection', function(e) {
   console.error('[SW] Unhandled rejection:', e.reason, e);
 });
 
@@ -28,129 +33,143 @@ function initialize() {
   setDefaultBlueIcon();
   refreshStateAndIcon();
 }
-chrome.runtime.onStartup?.addListener(() => {
-  console.log("[SW] onStartup event fired at", new Date().toISOString());
-  initialize();
-});
-chrome.runtime.onInstalled?.addListener(() => {
-  console.log("[SW] onInstalled event fired at", new Date().toISOString());
-  initialize();
-});
+if (chrome && chrome.runtime && chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(function() {
+    console.log("[SW] onStartup event fired at", new Date().toISOString());
+    initialize();
+  });
+}
+if (chrome && chrome.runtime && chrome.runtime.onInstalled) {
+  chrome.runtime.onInstalled.addListener(function() {
+    console.log("[SW] onInstalled event fired at", new Date().toISOString());
+    initialize();
+  });
+}
 initialize();
 
 // ========== DOWNLOAD EVENTS ==========
-chrome.downloads.onCreated.addListener((item) => {
-  console.log("[SW] downloads.onCreated", item);
-  downloadsState[item.id] = item;
-  refreshStateAndIcon();
-});
-chrome.downloads.onChanged.addListener((event) => {
-  console.log("[SW] downloads.onChanged", event);
-  if (downloadsState[event.id]) {
-    Object.keys(event).forEach((key) => {
-      if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
-        downloadsState[event.id][key] = event[key].current;
-      } else {
-        downloadsState[event.id][key] = event[key];
-      }
-    });
-  }
-  if (event.state && event.state.current === 'complete' && !isPopupOpen) {
-    unseen.push(event);
-  }
-  if (event.danger && event.danger.current !== 'accepted') {
-    isUnsafe = true;
-  }
-  if (event.danger && event.danger.current === 'accepted') {
-    isUnsafe = false;
-  }
-  refreshStateAndIcon();
-});
-chrome.downloads.onErased.addListener((id) => {
-  console.log("[SW] downloads.onErased", id);
-  delete downloadsState[id];
-  chrome.downloads.search({}, (allDownloads) => {
-    if (allDownloads.length === 0) {
-      unseen = [];
-      setDefaultBlueIcon();
-      refreshStateAndIcon();
-    } else {
-      refreshStateAndIcon();
-    }
-  });
-});
-
-// ========== MESSAGE EVENTS ==========
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("[SW] onMessage received:", message, "at", new Date().toISOString());
-  try {
-    if (message && message.type === 'init') {
-      sendResponse({ ok: true, time: Date.now() });
-      return true;
-    }
-    if (message === 'popup_open') {
-      isPopupOpen = true;
-      unseen = [];
-      refreshStateAndIcon();
-      sendInvalidateGizmo();
-      chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-        if (chrome.runtime.lastError) return;
-        updateDownloadsState(downloads);
-        chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, () => {});
-      });
-    }
-    if (message === 'popup_closed') {
-      isPopupOpen = false;
-      refreshStateAndIcon();
-    }
-    if (typeof message === 'object' && message.type === 'get_downloads_state') {
-      chrome.downloads.search({ orderBy: ["-startTime"] }, (downloads) => {
-        if (chrome.runtime.lastError) return sendResponse([]);
-        updateDownloadsState(downloads);
-        sendResponse(downloads);
-      });
-      return true;
-    }
-    if (typeof message === 'object' && 'window' in message) {
-      devicePixelRatio = message.window.devicePixelRatio;
-      prefersColorSchemeDark = message.window.prefersColorSchemeDark;
-      refreshStateAndIcon();
-    }
-  } catch (err) {
-    console.error("[SW] Error in onMessage:", err);
-  }
-});
-chrome.runtime.onConnect?.addListener((externalPort) => {
-  externalPort.onDisconnect.addListener(() => {
-    isPopupOpen = false;
+if (chrome && chrome.downloads && chrome.downloads.onCreated) {
+  chrome.downloads.onCreated.addListener(function(item) {
+    console.log("[SW] downloads.onCreated", item);
+    downloadsState[item.id] = item;
     refreshStateAndIcon();
   });
-  console.log("[SW] onConnect", externalPort);
-});
+}
+if (chrome && chrome.downloads && chrome.downloads.onChanged) {
+  chrome.downloads.onChanged.addListener(function(event) {
+    console.log("[SW] downloads.onChanged", event);
+    if (downloadsState[event.id]) {
+      Object.keys(event).forEach(function(key) {
+        if (typeof event[key] === "object" && event[key] !== null && "current" in event[key]) {
+          downloadsState[event.id][key] = event[key].current;
+        } else {
+          downloadsState[event.id][key] = event[key];
+        }
+      });
+    }
+    if (event.state && event.state.current === 'complete' && !isPopupOpen) {
+      unseen.push(event);
+    }
+    if (event.danger && event.danger.current !== 'accepted') {
+      isUnsafe = true;
+    }
+    if (event.danger && event.danger.current === 'accepted') {
+      isUnsafe = false;
+    }
+    refreshStateAndIcon();
+  });
+}
+if (chrome && chrome.downloads && chrome.downloads.onErased) {
+  chrome.downloads.onErased.addListener(function(id) {
+    console.log("[SW] downloads.onErased", id);
+    delete downloadsState[id];
+    chrome.downloads.search({}, function(allDownloads) {
+      if (allDownloads.length === 0) {
+        unseen = [];
+        setDefaultBlueIcon();
+        refreshStateAndIcon();
+      } else {
+        refreshStateAndIcon();
+      }
+    });
+  });
+}
+
+// ========== MESSAGE EVENTS ==========
+if (chrome && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+    console.log("[SW] onMessage received:", message, "at", new Date().toISOString());
+    try {
+      if (message && message.type === 'init') {
+        sendResponse({ ok: true, time: Date.now() });
+        return true;
+      }
+      if (message === 'popup_open') {
+        isPopupOpen = true;
+        unseen = [];
+        refreshStateAndIcon();
+        sendInvalidateGizmo();
+        chrome.downloads.search({ orderBy: ["-startTime"] }, function(downloads) {
+          if (chrome.runtime.lastError) return;
+          updateDownloadsState(downloads);
+          chrome.runtime.sendMessage({ type: "downloads_state", data: downloads }, function() {});
+        });
+      }
+      if (message === 'popup_closed') {
+        isPopupOpen = false;
+        refreshStateAndIcon();
+      }
+      if (typeof message === 'object' && message.type === 'get_downloads_state') {
+        chrome.downloads.search({ orderBy: ["-startTime"] }, function(downloads) {
+          if (chrome.runtime.lastError) return sendResponse([]);
+          updateDownloadsState(downloads);
+          sendResponse(downloads);
+        });
+        return true;
+      }
+      if (typeof message === 'object' && message.window) {
+        devicePixelRatio = message.window.devicePixelRatio;
+        prefersColorSchemeDark = message.window.prefersColorSchemeDark;
+        refreshStateAndIcon();
+      }
+    } catch (err) {
+      console.error("[SW] Error in onMessage:", err);
+    }
+  });
+}
+if (chrome && chrome.runtime && chrome.runtime.onConnect) {
+  chrome.runtime.onConnect.addListener(function(externalPort) {
+    externalPort.onDisconnect.addListener(function() {
+      isPopupOpen = false;
+      refreshStateAndIcon();
+    });
+    console.log("[SW] onConnect", externalPort);
+  });
+}
 
 // ========== ICON & POLLING LOGIC ==========
 function updateDownloadsState(downloads) {
   downloadsState = {};
-  downloads.forEach((item) => { downloadsState[item.id] = item; });
+  downloads.forEach(function(item) { downloadsState[item.id] = item; });
 }
 function refreshStateAndIcon() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
   }
-  chrome.downloads.search({}, (allDownloads) => {
+  chrome.downloads.search({}, function(allDownloads) {
     updateDownloadsState(allDownloads);
-    const inProgress = allDownloads.filter(
-      d => d.state === "in_progress" && !d.paused && d.totalBytes > 0
-    );
+    var inProgress = allDownloads.filter(function(d) {
+      return d.state === "in_progress" && !d.paused && d.totalBytes > 0;
+    });
     if (inProgress.length > 0) {
-      let progressItem = inProgress.reduce((latest, item) => {
-        const end = new Date(item.estimatedEndTime || 0).getTime();
-        const latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
+      var progressItem = inProgress.reduce(function(latest, item) {
+        var end = new Date(item.estimatedEndTime || 0).getTime();
+        var latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
         return end > latestEnd ? item : latest;
       }, inProgress[0]);
       if (progressItem && progressItem.totalBytes > 0) {
-        const progress = progressItem.bytesReceived / progressItem.totalBytes;
+        var progress = progressItem.bytesReceived / progressItem.totalBytes;
         if (progress > 0 && progress < 1) {
           drawToolbarProgressIcon(progress);
           pollTimer = setInterval(refreshStateAndIcon, 1000);
@@ -158,7 +177,7 @@ function refreshStateAndIcon() {
         }
       }
     }
-    if (allDownloads.some(item => item.state === "complete" && item.exists !== false)) {
+    if (allDownloads.some(function(item) { return item.state === "complete" && item.exists !== false; })) {
       drawToolbarIcon(unseen, "#00CC00");
       return;
     }
@@ -173,12 +192,12 @@ function setDefaultBlueIcon() {
 function sendShowGizmo() { sendMessageToActiveTab('show_gizmo'); }
 function sendInvalidateGizmo() { sendMessageToActiveTab('invalidate_gizmo'); }
 function sendMessageToActiveTab(message) {
-  chrome.tabs.query({ active: true, currentWindow: true, windowType: 'normal' }, (tabs) => {
+  chrome.tabs.query({ active: true, currentWindow: true, windowType: 'normal' }, function(tabs) {
     if (!tabs || !tabs.length) return;
-    tabs.forEach((tab) => {
-      if (tab && tab.url && tab.url.startsWith('http')) {
+    tabs.forEach(function(tab) {
+      if (tab && tab.url && tab.url.indexOf('http') === 0) {
         try {
-          chrome.tabs.sendMessage(tab.id, message, () => {});
+          chrome.tabs.sendMessage(tab.id, message, function() {});
         } catch (e) {}
       }
     });
@@ -193,9 +212,10 @@ function getIconColor(state) {
   return "#00286A";
 }
 function drawToolbarIcon(unseen, forceColor) {
-  let iconColor = forceColor || getIconColor((unseen && unseen.length > 0) ? "finished" : "default");
-  const scale = getScale();
-  const size = 38 * scale;
+  if (!ctx) return;
+  var iconColor = forceColor || getIconColor((unseen && unseen.length > 0) ? "finished" : "default");
+  var scale = getScale();
+  var size = 38 * scale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -212,15 +232,16 @@ function drawToolbarIcon(unseen, forceColor) {
   ctx.lineTo(20, 38);
   ctx.fill();
   ctx.restore();
-  const icon = { imageData: {} };
+  var icon = { imageData: {} };
   icon.imageData[size] = ctx.getImageData(0, 0, size, size);
   chrome.action.setIcon(icon);
 }
 function drawToolbarProgressIcon(progress) {
-  const iconColor = getIconColor("inProgress");
-  const scale = getScale();
-  const size = 38 * scale;
-  const width = progress * 38;
+  if (!ctx) return;
+  var iconColor = getIconColor("inProgress");
+  var scale = getScale();
+  var size = 38 * scale;
+  var width = progress * 38;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, 38, 38);
   ctx.save();
@@ -242,7 +263,7 @@ function drawToolbarProgressIcon(progress) {
   ctx.lineTo(20, 24);
   ctx.fill();
   ctx.restore();
-  const icon = { imageData: {} };
+  var icon = { imageData: {} };
   icon.imageData[size] = ctx.getImageData(0, 0, size, size);
   chrome.action.setIcon(icon);
 }
