@@ -1,642 +1,576 @@
-// MV3 Download manager popup script
+// MV3 Download Manager main.js/popup script
 
-// Establish persistent connection with service worker
-const port = chrome.runtime.connect({name: 'popup'});
-
-// Service worker connection check
-async function waitForServiceWorker(maxAttempts = 5) {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-            const response = await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    reject(new Error('Service worker response timeout'));
-                }, 2000);
-
-                chrome.runtime.sendMessage({ type: 'init' }, response => {
-                    clearTimeout(timeout);
-                    if (chrome.runtime.lastError) {
-                        reject(chrome.runtime.lastError);
-                    } else {
-                        resolve(response);
-                    }
-                });
-            });
-
-            if (response && response.ok) {
-                return true;
-            }
-        } catch (e) {
-            console.warn(`Attempt ${attempt + 1} failed:`, e);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-    }
-    return false;
-}
-
-async function initializePopup() {
-    try {
-        const serviceWorkerReady = await waitForServiceWorker();
-        if (!serviceWorkerReady) {
-            throw new Error("Service worker not responding");
-        }
-
-        // Initialize popup UI
-        const downloadsEl = document.getElementById("downloads");
-        if (downloadsEl) {
-            downloadsEl.innerHTML = "<div>Loading…</div>";
-        }
-
-        // Load locale and render downloads
-        if (typeof setLocale === "function") {
-            const storedLocale = await LocaleStorage.get();
-            await setLocale(storedLocale);
-        }
-
-        await render();
-    } catch (e) {
-        showPopupError("Failed to initialize: " + e.message);
-    }
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    initializePopup();
-});
-
-window.onerror = function (message, source, lineno, colno, error) {
-    showPopupError("Popup Error: " + message);
-    return false;
+window.$ = function(selector) {
+  return document.querySelector(selector);
 };
 
-function showPopupError(msg) {
-    let errBox = document.getElementById("popup-error-msg");
-    if (!errBox) {
-        errBox = document.createElement("div");
-        errBox.id = "popup-error-msg";
-        errBox.style.cssText =
-            "color:#fff;background:#c00;padding:8px;font-size:13px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;width:100%;text-align:left;";
-        document.body.appendChild(errBox);
-    }
-    errBox.style.display = "block";
-    errBox.textContent = msg;
-    console.error(msg);
-}
-
-function hidePopupError() {
-    let errBox = document.getElementById("popup-error-msg");
-    if (errBox) {
-        errBox.style.display = "none";
-        errBox.textContent = "";
-    }
-}
-
-function $(selector) {
-    return document.querySelector(selector);
-}
-
-function on(el, event, fn) {
-    if (el) el.addEventListener(event, fn);
-}
+Node.prototype.on = window.on = function(name, fn) {
+  if (this) this.addEventListener(name, fn);
+  return this;
+};
 
 const Format = {
-    toByte(bytes) {
-        if (!bytes && bytes !== 0) return "0 B";
-        if (bytes < 1000) return bytes + " B";
-        if (bytes < 1000 * 1000) return (bytes / 1000).toFixed() + " KB";
-        if (bytes < 1000 * 1000 * 10) return (bytes / 1000 / 1000).toFixed(1) + " MB";
-        if (bytes < 1000 * 1000 * 1000) return (bytes / 1000 / 1000).toFixed() + " MB";
-        if (bytes < 1000 * 1000 * 1000 * 1000) return (bytes / 1000 / 1000 / 1000).toFixed(1) + " GB";
-        return bytes + " B";
-    },
-    toTime(sec) {
-        if (sec < 60) return Math.ceil(sec) + " " + t("secs");
-        if (sec < 60 * 5) return Math.floor(sec / 60) + " " + t("mins") + " " + Math.ceil(sec % 60) + " " + t("secs");
-        if (sec < 60 * 60) return Math.ceil(sec / 60) + " " + t("mins");
-        if (sec < 60 * 60 * 5) return Math.floor(sec / 60 / 60) + " " + t("hours") + " " + (Math.ceil(sec % 60) % 60) + " " + t("mins");
-        if (sec < 60 * 60 * 24) return Math.ceil(sec / 60 / 60) + " " + t("hours");
-        return Math.ceil(sec / 60 / 60 / 24) + " " + t("days");
-    }
+  toByte(bytes) {
+    if (!bytes && bytes !== 0) return "0 B";
+    if (bytes < 1000) return bytes + " B";
+    if (bytes < 1000 * 1000) return (bytes / 1000).toFixed() + " KB";
+    if (bytes < 1000 * 1000 * 10) return (bytes / 1000 / 1000).toFixed(1) + " MB";
+    if (bytes < 1000 * 1000 * 1000) return (bytes / 1000 / 1000).toFixed() + " MB";
+    if (bytes < 1000 * 1000 * 1000 * 1000) return (bytes / 1000 / 1000 / 1000).toFixed(1) + " GB";
+    return bytes + " B";
+  },
+  toTime(sec) {
+    if (sec < 60) return Math.ceil(sec) + " " + t("secs");
+    if (sec < 60 * 5) return Math.floor(sec / 60) + " " + t("mins") + " " + Math.ceil(sec % 60) + " " + t("secs");
+    if (sec < 60 * 60) return Math.ceil(sec / 60) + " " + t("mins");
+    if (sec < 60 * 60 * 5) return Math.floor(sec / 60 / 60) + " " + t("hours") + " " + (Math.ceil(sec % 60) % 60) + " " + t("mins");
+    if (sec < 60 * 60 * 24) return Math.ceil(sec / 60 / 60) + " " + t("hours");
+    return Math.ceil(sec / 60 / 60 / 24) + " " + t("days");
+  }
 };
 
 const DEFAULT_DOWNLOAD_ICON =
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0'/></g></svg>";
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0'/></g></svg>";
 
-function getProperFilename(filename) {
+const Template = {
+  button(type, action, text) {
+    const btn = document.createElement("button");
+    btn.className = `button button--${type}`;
+    btn.setAttribute("data-action", action);
+    btn.textContent = text;
+    return btn;
+  },
+  buttonShowMore() {
+    const btn = document.createElement("button");
+    btn.className = "button button--secondary button--block";
+    btn.setAttribute("data-action", "more");
+    btn.textContent = "Show more";
+    return btn;
+  },
+  tinyXButton() {
+    const btn = document.createElement("button");
+    btn.className = "tiny-x";
+    btn.setAttribute("data-action", "erase");
+    btn.setAttribute("title", t("remove") || "Remove");
+    btn.setAttribute("aria-label", t("remove") || "Remove");
+    btn.type = "button";
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "11");
+    svg.setAttribute("height", "11");
+    svg.setAttribute("viewBox", "0 0 11 11");
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M2 2L9 9M9 2L2 9");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("stroke-linecap", "square");
+    path.setAttribute("fill", "none");
+
+    svg.appendChild(path);
+    btn.appendChild(svg);
+    return btn;
+  },
+  downloadItem(event) {
+    const container = document.createElement("div");
+    container.id = `download-${event.id}`;
+    container.className = `list__item download${!event.exists ? " removed" : ""} ${event.state === "complete" ? "complete" : ""} ${event.state === "interrupted" ? "canceled" : ""} ${event.paused ? "paused" : ""} ${event.state === "in_progress" ? "in-progress" : ""}`;
+    container.setAttribute("data-id", event.id);
+
+    if (event.state === "complete" || event.state === "interrupted") {
+      const xWrap = document.createElement("div");
+      xWrap.className = "tiny-x-wrap";
+      xWrap.appendChild(this.tinyXButton());
+      container.appendChild(xWrap);
+    }
+
+    const iconDiv = document.createElement("div");
+    iconDiv.className = "list__item__icon";
+    const iconImg = document.createElement("img");
+    iconImg.id = `icon-${event.id}`;
+    iconDiv.appendChild(iconImg);
+    container.appendChild(iconDiv);
+
+    const content = document.createElement("div");
+    content.className = "list__item__content";
+
+    const filename = document.createElement("p");
+    filename.className = "list__item__filename";
+    filename.title = App.getProperFilename(event.filename);
+    filename.setAttribute("data-action", "open");
+    filename.textContent = App.getProperFilename(event.filename);
+    content.appendChild(filename);
+
+    const source = document.createElement("a");
+    source.className = "list__item__source";
+    source.href = event.finalUrl;
+    source.setAttribute("data-action", "url");
+    source.title = event.finalUrl;
+    source.textContent = event.finalUrl;
+    content.appendChild(source);
+
+    if (event.state === "in_progress" && !event.paused) {
+      const progress = document.createElement("div");
+      progress.className = "progress";
+      const progressBar = document.createElement("div");
+      progressBar.className = "progress__bar";
+      if (event.totalBytes > 0) {
+        progressBar.style.width = ((100 * event.bytesReceived) / event.totalBytes).toFixed(1) + "%";
+      }
+      progress.appendChild(progressBar);
+      content.appendChild(progress);
+    }
+
+    const controls = document.createElement("div");
+    controls.className = "list__item__controls";
+
+    const buttons = document.createElement("div");
+    buttons.className = "list__item__buttons";
+
+    if (event.state === "complete") {
+      buttons.appendChild(this.button("secondary", "show", t("show_in_folder")));
+    } else if (event.state === "interrupted") {
+      buttons.appendChild(this.button("primary", "retry", t("retry")));
+    } else if (event.paused) {
+      buttons.appendChild(this.button("primary", "resume", t("resume")));
+      buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
+    } else {
+      buttons.appendChild(this.button("primary", "pause", t("pause")));
+      buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
+    }
+
+    controls.appendChild(buttons);
+
+    const status = document.createElement("div");
+    status.className = "list__item__status status";
+    if (event.state === "complete") {
+      status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
+    } else if (event.state === "interrupted") {
+      status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
+    } else if (event.paused) {
+      status.textContent = t("paused");
+    } else if (event.state === "in_progress") {
+      status.textContent = "";
+    }
+    controls.appendChild(status);
+
+    content.appendChild(controls);
+    container.appendChild(content);
+    return container;
+  }
+};
+
+let popupReady = false;
+let debounceTimeout = null;
+let pollInterval = null;
+let pollingFast = false;
+
+const App = {
+  timers: {},
+  resultsLength: 0,
+  resultsLimit: 10,
+  devicePixelRatio: typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1,
+  prefersColorSchemeDark: typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    : false,
+  renderPending: false,
+  lastRetried: null,
+
+  init() {
+    window.addEventListener("DOMContentLoaded", () => {
+      chrome.runtime.sendMessage('popup_open');
+      popupReady = true;
+      this.bindEvents();
+      this.render();
+      this.setAdaptivePolling();
+      chrome.downloads.onCreated.addListener(() => {
+        this.scheduleRender();
+      });
+    });
+    window.addEventListener("unload", () => {
+      popupReady = false;
+      chrome.runtime.sendMessage('popup_closed');
+      Object.values(this.timers).forEach(clearInterval);
+      this.timers = {};
+      if (pollInterval) clearInterval(pollInterval);
+    });
+  },
+
+  setAdaptivePolling(inProgress = false) {
+    if (pollInterval) clearInterval(pollInterval);
+    pollingFast = inProgress;
+    pollInterval = setInterval(() => {
+      if (popupReady) this.scheduleRender();
+    }, inProgress ? 1200 : 3500);
+  },
+
+  bindEvents() {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (!popupReady) return;
+      if (message.type === "download_created" || message.type === "download_changed") {
+        this.scheduleRender();
+      }
+      if (sendResponse) sendResponse({ status: "Message received in popup" });
+    });
+
+    $("#main")?.on("scroll", () => {
+      const toolbar = $(".toolbar");
+      if (toolbar) toolbar.classList.toggle("toolbar--fixed", $("#main").scrollTop > 0);
+    });
+
+    $("#action-show-all")?.on("click", () => this.openUrl("chrome://downloads"));
+
+    $("#action-clear-all")?.on("click", () => {
+      this.clearAllDownloadsExceptRunning((running) => {
+        if (running.length) {
+          this.render();
+        } else {
+          const emptyTmpl = $("#tmpl__state-empty");
+          const downloads = $("#downloads");
+          if (emptyTmpl && downloads) {
+            const clone = document.importNode(emptyTmpl.content, true);
+            while (downloads.firstChild) downloads.removeChild(downloads.firstChild);
+            downloads.appendChild(clone);
+          }
+          if (emptyTmpl) {
+            localize();
+          }
+        }
+      });
+    });
+
+    $("#downloads")?.on("click", this.handleClick.bind(this));
+
+    document.getElementById('language-switch')?.addEventListener('change', (e) => {
+      setTimeout(() => {
+        if (typeof App !== "undefined" && App.render) App.render();
+      }, 10);
+      setTimeout(localize, 20);
+    });
+  },
+
+  scheduleRender() {
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      this.render();
+    }, 200);
+  },
+
+  render() {
+    chrome.downloads.search(
+      {
+        limit: this.resultsLimit + 10,
+        filenameRegex: ".+",
+        orderBy: ["-startTime"]
+      },
+      (data) => {
+        if (chrome.runtime.lastError) {
+          console.error(chrome.runtime.lastError.message);
+          return;
+        }
+
+        data = data.filter(item => {
+          if (
+            item.state === "interrupted" &&
+            (
+              item.error === "USER_CANCELED" ||
+              item.error === "USER_CANCELLED" ||
+              item.error === "CANCELED"
+            ) &&
+            item.exists === false
+          ) {
+            try { chrome.downloads.erase({ id: item.id }); } catch (e) {}
+            return false;
+          }
+          return true;
+        });
+
+        data.sort((a, b) => {
+          if (a.filename === b.filename) {
+            if (a.state === "in_progress" && b.state === "interrupted") return -1;
+            if (a.state === "interrupted" && b.state === "in_progress") return 1;
+            if (a.state === "complete" && b.state === "interrupted") return -1;
+            if (a.state === "interrupted" && b.state === "complete") return 1;
+            return new Date(b.startTime) - new Date(a.startTime);
+          }
+          return new Date(b.startTime) - new Date(a.startTime);
+        });
+
+        this.resultsLength = data.length;
+        this.updateDownloadsView(data.slice(0, this.resultsLimit));
+
+        const anyInProgress = data.some(d => d.state === "in_progress" && !d.paused);
+        if (anyInProgress !== pollingFast) {
+          this.setAdaptivePolling(anyInProgress);
+        }
+      }
+    );
+  },
+
+  updateDownloadsView(results) {
+    const downloadsEl = $("#downloads");
+    if (!downloadsEl) return;
+
+    const emptyTmpl = $("#tmpl__state-empty");
+    if (!results || results.length === 0) {
+      if (emptyTmpl) {
+        const clone = document.importNode(emptyTmpl.content, true);
+        while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
+        downloadsEl.appendChild(clone);
+        localize();
+      }
+      return;
+    }
+
+    while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
+
+    results.forEach((item) => {
+      const node = Template.downloadItem(item);
+      downloadsEl.appendChild(node);
+
+      const iconImg = node.querySelector(`#icon-${item.id}`);
+      if (iconImg) {
+        if (item.state === "in_progress" || item.paused) {
+          if (iconImg.src !== DEFAULT_DOWNLOAD_ICON) {
+            iconImg.src = DEFAULT_DOWNLOAD_ICON;
+          }
+        } else {
+          chrome.downloads.getFileIcon(item.id, {size: 32}, (iconURL) => {
+            if (iconURL && iconImg.src !== iconURL) {
+              iconImg.src = iconURL;
+            }
+          });
+        }
+      }
+
+      if (item.state === "in_progress" && !item.paused) {
+        this.startTimer(item.id);
+      } else {
+        this.stopTimer(item.id);
+      }
+    });
+
+    if (this.resultsLength > this.resultsLimit) {
+      downloadsEl.appendChild(Template.buttonShowMore());
+    }
+  },
+
+  refreshDownloadView(id) {
+    chrome.downloads.search({ id: id }, (results) => {
+      if (chrome.runtime.lastError) {
+        console.error(chrome.runtime.lastError.message);
+        return;
+      }
+      if (results[0]) {
+        this.render();
+      }
+    });
+  },
+
+  clearAllDownloadsExceptRunning(callback) {
+    chrome.downloads.search({}, (results) => {
+      if (chrome.runtime.lastError) {
+        console.error(chrome.runtime.lastError.message);
+        return;
+      }
+      const running = results.filter((item) => item.state === "in_progress");
+      results.forEach((item) => {
+        if (item.state !== "in_progress" && item.id) {
+          chrome.downloads.erase({ id: item.id });
+          this.stopTimer(item.id);
+        }
+      });
+      if (callback) callback(running);
+    });
+  },
+
+  handleClick(event) {
+    const action = event.target.dataset.action;
+    if (!action) return;
+
+    event.preventDefault();
+
+    if (action === "url") {
+      this.openUrl(event.target.href);
+      return;
+    }
+
+    if (action === "more") {
+      this.openUrl("chrome://downloads");
+      return;
+    }
+
+    const $el = event.target.closest(".download");
+    if (!$el) return;
+
+    const id = +$el.dataset.id;
+
+    if (["resume", "cancel", "pause"].includes(action)) {
+      chrome.downloads[action](id);
+      this.refreshDownloadView(id);
+      if (action === "resume") {
+        this.startTimer(id);
+      } else {
+        this.stopTimer(id);
+      }
+    } else if (action === "retry") {
+      chrome.downloads.search({ id: id }, (results) => {
+        if (chrome.runtime.lastError) {
+          console.error(chrome.runtime.lastError.message);
+          return;
+        }
+        if (results[0]) {
+          App.lastRetried = {
+            url: results[0].url,
+            filename: results[0].filename,
+            canceledId: id
+          };
+          chrome.downloads.download({ url: results[0].url }, (new_id) => {
+            if (chrome.runtime.lastError) {
+              console.error(chrome.runtime.lastError.message);
+              return;
+            }
+            this.startTimer(new_id);
+            this.render();
+            setTimeout(() => this.render(), 400);
+          });
+        }
+      });
+    } else if (action === "erase") {
+      chrome.downloads.erase({ id: id }, () => {
+        const $list = $el.parentNode;
+        if ($list) {
+          $list.removeChild($el);
+          this.stopTimer(id);
+          this.render();
+        }
+      });
+    } else if (action === "show") {
+      chrome.downloads.show(id);
+    } else if (action === "open") {
+      chrome.downloads.open(id);
+    }
+  },
+
+  startTimer(id) {
+    this.stopTimer(id);
+
+    let progressLastValue = 0;
+    let progressCurrentValue = 0;
+    let progressNextValue = 0;
+    let progressRemainingTime = 0;
+    let progressLastFrame = Date.now();
+
+    const timer = () => {
+      const $el = $(`#download-${id}`);
+      if (!$el) return;
+
+      const $status = $el.querySelector(".status");
+
+      chrome.downloads.search({ id: id }, (results) => {
+        if (chrome.runtime.lastError) {
+          console.error(chrome.runtime.lastError.message);
+          this.stopTimer(id);
+          return;
+        }
+
+        const event = results[0];
+        if (!event) {
+          this.stopTimer(id);
+          this.render();
+          return;
+        }
+
+        if (event.state === "in_progress" && !event.paused) {
+          let speed = 0;
+          let left_text = "";
+          let bytesReceived = event.bytesReceived || 0;
+          let totalBytes = event.totalBytes || 0;
+          let speedText = "0 B/s";
+          let transferred = Format.toByte(bytesReceived);
+          let total = Format.toByte(totalBytes);
+          let left = "";
+          let timeLeft = "";
+
+          if (event.estimatedEndTime) {
+            const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
+            if (remainingSeconds > 0 && totalBytes > 0) {
+              speed = (totalBytes - bytesReceived) / remainingSeconds;
+              speedText = Format.toByte(speed) + "/s";
+              timeLeft = Format.toTime(remainingSeconds);
+              left = `, ${timeLeft} ${t("left")}`;
+            }
+          }
+
+          if ($status) {
+            $status.textContent = `${speedText} - ${transferred} of ${total}${left}`;
+          }
+        } else if (event.state === "complete") {
+          if ($status) $status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
+          this.stopTimer(id);
+        } else if (event.paused) {
+          if ($status) $status.textContent = t("paused");
+          this.stopTimer(id);
+        } else if (event.state === "interrupted") {
+          if ($status) $status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
+          this.stopTimer(id);
+        }
+      });
+    };
+
+    this.timers[id] = setInterval(timer, 1000);
+    setTimeout(timer, 1);
+
+    const progressAnimationFrame = () => {
+      const $el = $(`#download-${id}`);
+      if (!$el) return;
+
+      const $progress = $el.querySelector(".progress__bar");
+
+      const now = Date.now();
+      const elapsed = now - progressLastFrame;
+      const remainingProgress = progressNextValue - progressCurrentValue;
+      progressLastFrame = now;
+
+      if (progressRemainingTime > 0 && remainingProgress > 0) {
+        progressCurrentValue += (elapsed / progressRemainingTime) * remainingProgress;
+        progressRemainingTime -= elapsed;
+
+        if ($progress) {
+          $progress.style.width = (100 * progressCurrentValue).toFixed(1) + "%";
+        }
+      }
+
+      if (this.timers[id]) {
+        requestAnimationFrame(progressAnimationFrame);
+      }
+    };
+
+    requestAnimationFrame(progressAnimationFrame);
+  },
+
+  stopTimer(id) {
+    clearInterval(this.timers[id]);
+    delete this.timers[id];
+  },
+
+  getProperFilename(filename) {
     const backArray = filename.split("\\");
     const forwardArray = filename.split("/");
     const array = backArray.length > forwardArray.length ? backArray : forwardArray;
     return array.pop().replace(/.crdownload$/, "");
-}
-window.App = { getProperFilename };
+  },
 
-const Template = {
-    button(type, action, text) {
-        const btn = document.createElement("button");
-        btn.className = `button button--${type}`;
-        btn.setAttribute("data-action", action);
-        btn.textContent = text;
-        return btn;
-    },
-    buttonShowMore() {
-        const btn = document.createElement("button");
-        btn.className = "button button--secondary button--block";
-        btn.setAttribute("data-action", "more");
-        btn.textContent = t("show_all_downloads");
-        return btn;
-    },
-    tinyXButton() {
-        const btn = document.createElement("button");
-        btn.className = "tiny-x";
-        btn.setAttribute("data-action", "erase");
-        btn.setAttribute("title", t("remove") || "Remove");
-        btn.setAttribute("aria-label", t("remove") || "Remove");
-        btn.type = "button";
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("width", "11");
-        svg.setAttribute("height", "11");
-        svg.setAttribute("viewBox", "0 0 11 11");
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", "M2 2L9 9M9 2L2 9");
-        path.setAttribute("stroke", "currentColor");
-        path.setAttribute("stroke-width", "2");
-        path.setAttribute("stroke-linecap", "square");
-        path.setAttribute("fill", "none");
-        svg.appendChild(path);
-        btn.appendChild(svg);
-        return btn;
-    },
-    downloadItem(event) {
-        const container = document.createElement("div");
-        container.id = `download-${event.id}`;
-        container.className = `list__item download${!event.exists ? " removed" : ""} ${event.state === "complete" ? "complete" : ""} ${event.state === "interrupted" ? "canceled" : ""} ${event.paused ? "paused" : ""}`;
-        container.setAttribute("data-id", event.id);
+  isDangerous(event) {
+    return !/safe|accepted/.test(event.danger) && event.state === "in_progress";
+  },
 
-        if (event.state === "complete" || event.state === "interrupted") {
-            const xWrap = document.createElement("div");
-            xWrap.className = "tiny-x-wrap";
-            xWrap.appendChild(this.tinyXButton());
-            container.appendChild(xWrap);
-        }
-
-        const iconDiv = document.createElement("div");
-        iconDiv.className = "list__item__icon";
-        const iconImg = document.createElement("img");
-        iconImg.id = `icon-${event.id}`;
-        iconDiv.appendChild(iconImg);
-        container.appendChild(iconDiv);
-
-        const content = document.createElement("div");
-        content.className = "list__item__content";
-
-        const filename = document.createElement("p");
-        filename.className = "list__item__filename";
-        filename.title = App.getProperFilename(event.filename);
-        filename.setAttribute("data-action", "open");
-        filename.textContent = App.getProperFilename(event.filename);
-        content.appendChild(filename);
-
-        const source = document.createElement("a");
-        source.className = "list__item__source";
-        source.href = event.finalUrl;
-        source.setAttribute("data-action", "url");
-        source.title = event.finalUrl;
-        source.textContent = event.finalUrl;
-        content.appendChild(source);
-
-        if (event.state === "in_progress" && !event.paused) {
-            const progress = document.createElement("div");
-            progress.className = "progress";
-            const progressBar = document.createElement("div");
-            progressBar.className = "progress__bar";
-            if (event.totalBytes > 0) {
-                progressBar.style.width = ((100 * event.bytesReceived) / event.totalBytes).toFixed(1) + "%";
-            }
-            progress.appendChild(progressBar);
-            content.appendChild(progress);
-        }
-
-        const controls = document.createElement("div");
-        controls.className = "list__item__controls";
-        const buttons = document.createElement("div");
-        buttons.className = "list__item__buttons";
-        
-        if (event.state === "complete") {
-            buttons.appendChild(this.button("secondary", "show", t("show_in_folder")));
-        } else if (event.state === "interrupted") {
-            buttons.appendChild(this.button("primary", "retry", t("retry")));
-        } else if (event.paused) {
-            buttons.appendChild(this.button("primary", "resume", t("resume")));
-            buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
-        } else {
-            buttons.appendChild(this.button("primary", "pause", t("pause")));
-            buttons.appendChild(this.button("secondary", "cancel", t("cancel")));
-        }
-        controls.appendChild(buttons);
-
-        const status = document.createElement("div");
-        status.className = "list__item__status status";
-        if (event.state === "complete") {
-            status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
-        } else if (event.state === "interrupted") {
-            status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
-        } else if (event.paused) {
-            status.textContent = t("paused");
-        } else if (event.state === "in_progress") {
-            status.textContent = "";
-        }
-        controls.appendChild(status);
-
-        content.appendChild(controls);
-        container.appendChild(content);
-        return container;
-    }
+  openUrl(url) {
+    chrome.tabs.create({
+      url: url,
+      selected: true
+    });
+  }
 };
 
-function withTimeout(fn, ms = 2000) {
-    let done = false;
-    return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-            if (!done) {
-                done = true;
-                reject(new Error("No response from background (timeout)."));
-            }
-        }, ms);
-        fn((...args) => {
-            if (!done) {
-                done = true;
-                clearTimeout(timer);
-                resolve(...args);
-            }
-        });
-    });
-}
-
-async function robustDownloadSearch(options, maxRetries = 2) {
-    let tries = 0;
-    while (tries <= maxRetries) {
-        try {
-            console.log("Popup: downloads.search try", tries, "at", Date.now());
-            return await withTimeout(cb => chrome.downloads.search(options, cb), 2000);
-        } catch (e) {
-            console.warn("Popup: downloads.search attempt", tries, "failed:", e.message);
-            tries++;
-            if (tries > maxRetries) throw e;
-            await new Promise(r => setTimeout(r, 200));
-        }
-    }
-}
-
-const LocaleStorage = {
-    async get() {
-        try {
-            if (!chrome?.storage?.local) {
-                return navigator.language.split('-')[0] || 'en';
-            }
-            const result = await chrome.storage.local.get('selectedLocale');
-            return result.selectedLocale || navigator.language.split('-')[0] || 'en';
-        } catch (e) {
-            console.error('Failed to get locale from storage:', e);
-            return 'en';
-        }
-    },
-    async set(locale) {
-        try {
-            if (!chrome?.storage?.local) return false;
-            await chrome.storage.local.set({ 'selectedLocale': locale });
-            return true;
-        } catch (e) {
-            console.error('Failed to save locale to storage:', e);
-            throw e;
-        }
-    }
-};
-
-let debounceTimeout = null;
-let pollInterval = null;
-let pollingFast = false;
-let timers = {};
-let resultsLength = 0;
-let resultsLimit = 20;
-
-async function render() {
-    function scheduleRender() {
-        if (debounceTimeout) clearTimeout(debounceTimeout);
-        debounceTimeout = setTimeout(render, 200);
-    }
-
-    function setAdaptivePolling(inProgress = false) {
-        if (pollInterval) clearInterval(pollInterval);
-        pollingFast = inProgress;
-        pollInterval = setInterval(scheduleRender, inProgress ? 1200 : 3500);
-    }
-
-    function updateDownloadsView(results) {
-        const downloadsEl = $("#downloads");
-        if (!downloadsEl) return;
-        const emptyTmpl = $("#tmpl__state-empty");
-        if (!results || results.length === 0) {
-            if (emptyTmpl) {
-                const clone = document.importNode(emptyTmpl.content, true);
-                while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
-                downloadsEl.appendChild(clone);
-                if (typeof localizeAll === "function") localizeAll();
-            }
-            return;
-        }
-        while (downloadsEl.firstChild) downloadsEl.removeChild(downloadsEl.firstChild);
-        results.forEach((item) => {
-            const node = Template.downloadItem(item);
-            downloadsEl.appendChild(node);
-            const iconImg = node.querySelector(`#icon-${item.id}`);
-            if (iconImg) {
-                if (item.state === "in_progress" || item.paused) {
-                    iconImg.src = DEFAULT_DOWNLOAD_ICON;
-                } else if (chrome?.downloads?.getFileIcon) {
-                    chrome.downloads.getFileIcon(item.id, { size: 32 }, (iconURL) => {
-                        if (iconURL && iconImg.src !== iconURL) iconImg.src = iconURL;
-                    });
-                }
-            }
-            if (item.state === "in_progress" && !item.paused) {
-                startTimer(item.id);
-            } else {
-                stopTimer(item.id);
-            }
-        });
-        if (resultsLength > resultsLimit) {
-            downloadsEl.appendChild(Template.buttonShowMore());
-        }
-    }
-
-    try {
-        const data = await robustDownloadSearch(
-            {
-                limit: resultsLimit + 10,
-                filenameRegex: ".+",
-                orderBy: ["-startTime"]
-            },
-            2
-        );
-        
-        if (chrome.runtime.lastError) {
-            showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-            return;
-        }
-        
-        let filtered = data.filter(item => {
-            if (
-                item.state === "interrupted" &&
-                (
-                    item.error === "USER_CANCELED" ||
-                    item.error === "USER_CANCELLED" ||
-                    item.error === "CANCELED"
-                ) &&
-                item.exists === false
-            ) {
-                try { chrome.downloads.erase({ id: item.id }); } catch (e) { }
-                return false;
-            }
-            return true;
-        });
-
-        filtered.sort((a, b) => {
-            if (a.filename === b.filename) {
-                if (a.state === "in_progress" && b.state === "interrupted") return -1;
-                if (a.state === "interrupted" && b.state === "in_progress") return 1;
-                if (a.state === "complete" && b.state === "interrupted") return -1;
-                if (a.state === "interrupted" && b.state === "complete") return 1;
-                return new Date(b.startTime) - new Date(a.startTime);
-            }
-            return new Date(b.startTime) - new Date(a.startTime);
-        });
-
-        resultsLength = filtered.length;
-        updateDownloadsView(filtered.slice(0, resultsLimit));
-        const anyInProgress = filtered.some(d => d.state === "in_progress" && !d.paused);
-        if (anyInProgress !== pollingFast) setAdaptivePolling(anyInProgress);
-    } catch (err) {
-        showPopupError("Failed to contact background script: " + err.message);
-    }
-}
-
-function handleClick(event) {
-    try {
-        const action = event.target.dataset.action;
-        if (!action) return;
-        event.preventDefault();
-        if (action === "url") {
-            if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: event.target.href, selected: true });
-            return;
-        }
-        if (action === "more") {
-            if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
-            return;
-        }
-        const $el = event.target.closest(".download");
-        if (!$el) return;
-        const id = +$el.dataset.id;
-        if (["resume", "cancel", "pause"].includes(action)) {
-            chrome.downloads[action](id);
-            refreshDownloadView(id);
-            if (action === "resume") startTimer(id); else stopTimer(id);
-        } else if (action === "retry") {
-            chrome.downloads.search({ id: id }, (results) => {
-                if (chrome.runtime.lastError) {
-                    showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-                    return;
-                }
-                if (results[0]) {
-                    chrome.downloads.download({ url: results[0].url }, (new_id) => {
-                        if (chrome.runtime.lastError) {
-                            showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-                            return;
-                        }
-                        startTimer(new_id);
-                        render();
-                        setTimeout(render, 400);
-                    });
-                }
-            });
-        } else if (action === "erase") {
-            chrome.downloads.erase({ id: id }, () => {
-                const $list = $el.parentNode;
-                if ($list) {
-                    $list.removeChild($el);
-                    stopTimer(id);
-                    render();
-                }
-            });
-        } else if (action === "show") {
-            chrome.downloads.show(id);
-        } else if (action === "open") {
-            chrome.downloads.open(id);
-        }
-    } catch (e) {
-        showPopupError("Popup Error: " + e.message);
-    }
-}
-
-function refreshDownloadView(id) {
-    chrome.downloads.search({ id: id }, (results) => {
-        if (chrome.runtime.lastError) {
-            showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-            return;
-        }
-        if (results[0]) render();
-    });
-}
-
-function clearAllDownloadsExceptRunning(callback) {
-    chrome.downloads.search({}, (results) => {
-        if (chrome.runtime.lastError) {
-            showPopupError("Popup Error: " + chrome.runtime.lastError.message);
-            return;
-        }
-        const running = results.filter((item) => item.state === "in_progress");
-        results.forEach((item) => {
-            if (item.state !== "in_progress" && item.id) {
-                chrome.downloads.erase({ id: item.id });
-                stopTimer(item.id);
-            }
-        });
-        if (callback) callback(running);
-    });
-}
-
-function startTimer(id) {
-    stopTimer(id);
-    const timer = () => {
-        try {
-            const $el = $(`#download-${id}`);
-            if (!$el) return;
-            const $status = $el.querySelector(".status");
-            chrome.downloads.search({ id: id }, (results) => {
-                if (chrome.runtime.lastError) {
-                    stopTimer(id);
-                    return;
-                }
-                const event = results[0];
-                if (!event) {
-                    stopTimer(id);
-                    render();
-                    return;
-                }
-                if (event.state === "in_progress" && !event.paused) {
-                    let speed = 0, bytesReceived = event.bytesReceived || 0, totalBytes = event.totalBytes || 0;
-                    let speedText = "0 B/s", transferred = Format.toByte(bytesReceived), total = Format.toByte(totalBytes);
-                    let left = "", timeLeftText = "";
-                    if (event.estimatedEndTime) {
-                        const remainingSeconds = (new Date(event.estimatedEndTime) - new Date()) / 1000;
-                        if (remainingSeconds > 0 && totalBytes > 0) {
-                            speed = (totalBytes - bytesReceived) / remainingSeconds;
-                            speedText = Format.toByte(speed) + "/s";
-                            timeLeftText = Format.toTime(remainingSeconds) + " " + t("left");
-                            left = timeLeftText;
-                        }
-                    }
-                    let ofString = t("of");
-                    let statusText;
-                    if (ofString === "/") {
-                        statusText =
-                            speedText +
-                            (left ? " · " + left : "") +
-                            " · " + transferred + " / " + total;
-                    } else {
-                        statusText =
-                            speedText +
-                            (left ? " · " + left : "") +
-                            " · " + transferred + " " + ofString + " " + total;
-                    }
-                    if ($status) $status.textContent = statusText;
-                } else if (event.state === "complete") {
-                    if ($status) $status.textContent = Format.toByte(Math.max(event.totalBytes, event.bytesReceived));
-                    stopTimer(id);
-                } else if (event.paused) {
-                    if ($status) $status.textContent = t("paused");
-                    stopTimer(id);
-                } else if (event.state === "interrupted") {
-                    if ($status) $status.textContent = event.error === "NETWORK_FAILED" ? "Failed - Network error" : t("canceled");
-                    stopTimer(id);
-                }
-            });
-        } catch (e) {
-            showPopupError("Popup Error: " + e.message);
-            stopTimer(id);
-        }
-    };
-    timers[id] = setInterval(timer, 1500);
-    setTimeout(timer, 1);
-}
-
-function stopTimer(id) {
-    if (timers[id]) {
-        clearInterval(timers[id]);
-        delete timers[id];
-    }
-}
-
-// Event Listeners
-on($("#main"), "scroll", () => {
-    try {
-        const toolbar = $(".toolbar");
-        if (toolbar) toolbar.classList.toggle("toolbar--fixed", $("#main").scrollTop > 0);
-    } catch (e) {
-        showPopupError("Popup Error: " + e.message);
-    }
-});
-
-on($("#action-show-all"), "click", () => {
-    try {
-        if (chrome && chrome.tabs && chrome.tabs.create) chrome.tabs.create({ url: "chrome://downloads", selected: true });
-    } catch (e) {
-        showPopupError("Popup Error: " + e.message);
-    }
-});
-
-on($("#action-clear-all"), "click", () => {
-    try {
-        clearAllDownloadsExceptRunning((running) => {
-            if (running.length) {
-                render();
-            } else {
-                const emptyTmpl = $("#tmpl__state-empty");
-                const downloads = $("#downloads");
-                if (emptyTmpl && downloads) {
-                    const clone = document.importNode(emptyTmpl.content, true);
-                    while (downloads.firstChild) downloads.removeChild(downloads.firstChild);
-                    downloads.appendChild(clone);
-                }
-                if (typeof localizeAll === "function") localizeAll();
-            }
-        });
-    } catch (e) {
-        showPopupError("Popup Error: " + e.message);
-    }
-});
-
-on($("#downloads"), "click", handleClick);
-
-on($("#language-switch"), "change", async function() {
-    try {
-        const locale = this.value;
-        if (typeof setLocale === "function") {
-            await LocaleStorage.set(locale);
-            await setLocale(locale);
-            render();
-        }
-    } catch (e) {
-        showPopupError("Failed to set locale: " + e.message);
-    }
-});
-
-// Cleanup
-window.addEventListener('unload', function() {
-    try {
-        Object.values(timers).forEach(clearInterval);
-        timers = {};
-        if (pollInterval) clearInterval(pollInterval);
-        if (debounceTimeout) clearTimeout(debounceTimeout);
-        port.disconnect();
-    } catch (e) {
-        console.error('Error during cleanup:', e);
-    }
-});
+App.init();

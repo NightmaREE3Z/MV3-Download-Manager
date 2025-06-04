@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Set a fixed viewport width for Chrome popup -->
   <meta name="viewport" content="width=420, initial-scale=1, maximum-scale=1.0, user-scalable=no">
   <title data-i18n="downloads_title">Downloads</title>
   <link rel="shortcut icon" type="image/png" href="icons/iconblue.png">
@@ -22,41 +23,11 @@
     #main {
       width: 100%;
     }
-    #popup-error-msg {
-      color: #fff;
-      background: #c00;
-      padding: 8px;
-      font-size: 13px;
-      font-family: monospace;
-      z-index: 9999;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      text-align: left;
-      display: none;
-    }
-    #popup-hang-msg {
-      color: #fff;
-      background: #c90;
-      padding: 8px;
-      font-size: 13px;
-      font-family: monospace;
-      z-index: 9999;
-      position: fixed;
-      top: 36px;
-      left: 0;
-      width: 100%;
-      text-align: left;
-      display: none;
-    }
   </style>
 </head>
 <body>
-  <div id="popup-error-msg"></div>
-  <div id="popup-hang-msg"></div>
   <nav class="toolbar">
-    <select id="language-switch" autocomplete="off">
+    <select id="language-switch">
       <option value="en">🇬🇧 English</option>
       <option value="fi">🇫🇮 Suomi</option>
     </select>
@@ -66,9 +37,11 @@
       <button id="action-clear-all" class="button button--secondary" data-i18n="clear_list">Clear list</button>
     </div>
   </nav>
+
   <main id="main">
     <section id="downloads" class="list"></section>
   </main>
+
   <template id="tmpl__state-empty">
     <div class="state">
       <div class="state__content">
@@ -82,6 +55,7 @@
       </div>
     </div>
   </template>
+
   <script type="text/javascript" src="js/localize.js"></script>
   <script type="text/javascript" src="js/main.js"></script>
 </body>

@@ -1,7 +1,7 @@
 {
   "name": "MV3 Download Manager",
   "short_name": "MV3DLManager",
-  "version": "7.2",
+  "version": "5.5",
   "manifest_version": 3,
   "description": "A clean and modern download manager for your everyday download tasks in two languages.",
   "background": {
@@ -21,6 +21,7 @@
     "downloads",
     "downloads.open",
     "downloads.shelf",
+    "downloads.ui",
     "activeTab",
     "tabs"
   ],
@@ -34,11 +35,8 @@
         "icons/icongreen.png",
         "icons/iconyellow.png"
       ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "matches": ["<all_urls>"]
     }
   ],
-  "default_locale": "en",
-  "minimum_chrome_version": "99"
+  "default_locale": "en"
 }

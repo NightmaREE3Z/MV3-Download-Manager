@@ -1,100 +1,107 @@
-// js/localize.js
-
-const AVAILABLE_LOCALES = [
-  { value: "en", label: "🇬🇧 English" },
-  { value: "fi", label: "🇫🇮 Suomi" }
-];
-
-let currentLocale = "en";
-let messages = {};
-
-function getLocaleFromStorage() {
-  let locale = localStorage.getItem("popupLang");
-  if (!locale) {
-    locale = navigator.language ? navigator.language.substring(0, 2).toLowerCase() : "en";
+const translations = {
+  en: {
+    downloads_title: "Downloads",
+    show_all: "Download history",
+    clear_all: "Clear downloads",
+    files_appear: "Files you download appear here",
+    pause: "Pause",
+    cancel: "Cancel",
+    resume: "Resume",
+    retry: "Retry",
+    paused: "Paused",
+    canceled: "Canceled",
+    show_in_folder: "Show in folder",
+    deleted: "Deleted",
+    left: "left",
+    secs: "secs",
+    mins: "mins",
+    hours: "hours",
+    days: "days"
+  },
+  fi: {
+    downloads_title: "Lataukset",
+    show_all: "Lataushistoria",
+    clear_all: "Tyhjennä lataukset",
+    files_appear: "Lataamasi tiedostot ilmestyvät tähän",
+    pause: "Tauko",
+    cancel: "Peruuta",
+    resume: "Jatka",
+    retry: "Yritä uudelleen",
+    paused: "Tauotettu",
+    canceled: "Peruutettu",
+    show_in_folder: "Näytä kansiossa",
+    deleted: "Poistettu",
+    left: "jäljellä",
+    secs: "sek",
+    mins: "min",
+    hours: "tun",
+    days: "päiv"
   }
-  if (!AVAILABLE_LOCALES.some(l => l.value === locale)) {
-    locale = "en";
-  }
-  return locale;
 }
 
-async function fetchMessages(locale) {
-  const url = chrome.runtime.getURL(`_locales/${locale}/messages.json`);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Locale file not found: ${locale}`);
-  return resp.json();
+function getBrowserLang() {
+  let navLang = (navigator.language || navigator.userLanguage || "en").toLowerCase();
+  if (navLang.startsWith("fi")) return "fi";
+  return "en";
 }
 
-async function setLocale(locale) {
-  currentLocale = locale;
-  localStorage.setItem("popupLang", locale);
+function getAvailableLang(lang) {
+  if (translations[lang]) return lang;
+  return "en";
+}
 
-  try {
-    const json = await fetchMessages(locale);
-    messages = {};
-    for (const key in json) {
-      messages[key] = json[key].message;
-    }
-    updateLanguageSwitcher(locale);
-    localizeAll();
-    if (typeof window.render === 'function') window.render();
-  } catch (err) {
-    if (locale !== "en") {
-      await setLocale("en");
-    } else {
-      showLocaleError(err);
-    }
-  }
+function getSavedLang() {
+  try { return localStorage.getItem("popup_lang"); } catch (e) {}
+  return null;
+}
+
+function saveLang(lang) {
+  try { localStorage.setItem("popup_lang", lang); } catch (e) {}
+}
+
+function getCurrentLang() {
+  const langSel = document.getElementById("language-switch");
+  return getAvailableLang(
+    (langSel && langSel.value) ||
+    getSavedLang() ||
+    getBrowserLang() ||
+    "en"
+  );
 }
 
 function t(key) {
-  return messages[key] || key;
+  const lang = getCurrentLang();
+  return (translations[lang] && translations[lang][key]) || translations["en"][key] || key;
 }
 
-function updateLanguageSwitcher(selectedValue) {
-  const langSwitch = document.getElementById("language-switch");
-  if (!langSwitch) return;
-  langSwitch.innerHTML = "";
-  for (const l of AVAILABLE_LOCALES) {
-    const opt = document.createElement("option");
-    opt.value = l.value;
-    opt.textContent = l.label;
-    langSwitch.appendChild(opt);
-  }
-  langSwitch.value = selectedValue;
-}
-
-function localizeAll() {
-  document.querySelectorAll("[data-i18n]").forEach(el => {
-    const msg = t(el.getAttribute("data-i18n"));
-    const attr = el.getAttribute("data-i18n-attr");
-    if (msg) {
-      if (attr) {
-        el.setAttribute(attr, msg);
-      } else {
-        el.textContent = msg;
-      }
-    }
+function localize(lang) {
+  lang = getAvailableLang(lang || getCurrentLang());
+  let el;
+  el = document.querySelector(".toolbar__title");
+  if (el) el.textContent = translations[lang].downloads_title;
+  el = document.getElementById("action-show-all");
+  if (el) el.textContent = translations[lang].show_all;
+  el = document.getElementById("action-clear-all");
+  if (el) el.textContent = translations[lang].clear_all;
+  document.querySelectorAll("#files-appear").forEach(e => {
+    e.textContent = translations[lang].files_appear;
   });
-  document.title = t("downloads_title");
 }
 
-function showLocaleError(err) {
-  let box = document.getElementById("popup-error-msg");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "popup-error-msg";
-    box.style.cssText = "color:#fff;background:#c00;padding:8px;font-size:13px;font-family:monospace;z-index:9999;position:fixed;top:0;left:0;width:100%;text-align:left;";
-    document.body.appendChild(box);
+document.addEventListener("DOMContentLoaded", function() {
+  const langSel = document.getElementById("language-switch");
+  let lang = getSavedLang() || getBrowserLang() || (langSel ? langSel.value : "en");
+  lang = getAvailableLang(lang);
+  if (langSel) langSel.value = lang;
+  localize(lang);
+
+  if (langSel) {
+    langSel.addEventListener("change", e => {
+      localize(e.target.value);
+      saveLang(e.target.value);
+      setTimeout(() => {
+        if (typeof App !== "undefined" && App.render) App.render();
+      }, 10);
+    });
   }
-  box.textContent = "Localization error: " + (err && err.message ? err.message : err);
-  console.error(err);
-}
-
-// Expose for popup/main.js
-window.t = t;
-window.setLocale = setLocale;
-window.getLocaleFromStorage = getLocaleFromStorage;
-window.localizeAll = localizeAll;
-window.AVAILABLE_LOCALES = AVAILABLE_LOCALES;
+});
