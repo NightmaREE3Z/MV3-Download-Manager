@@ -1,12 +1,56 @@
 {
-  "downloads_title": { "message": "Lataukset" },
-  "show_all": { "message": "Näytä kaikki" },
-  "clear_all": { "message": "Tyhjennä kaikki" },
-  "files_appear": { "message": "Lataamasi tiedostot näkyvät täällä" },
-  "pause": { "message": "Tauko" },
-  "cancel": { "message": "Peruuta" },
-  "resume": { "message": "Jatka" },
-  "retry": { "message": "Yritä uudelleen" },
-  "cancelled": { "message": "Peruutettu" },
-  "show_in_folder": { "message": "Näytä kansiossa" }
+   "cancel": {
+      "message": "Peruuta"
+   },
+   "canceled": {
+      "message": "Peruutettu"
+   },
+   "clear_list": {
+      "message": "Tyhjennä lataukset"
+   },
+   "days": {
+      "message": "pv"
+   },
+   "downloads_title": {
+      "message": "Lataukset"
+   },
+   "files_will_appear_here": {
+      "message": "Lataamasi tiedostot ilmestyvät tähän"
+   },
+   "hours": {
+      "message": "h"
+   },
+   "left": {
+      "message": "jäljellä"
+   },
+   "mins": {
+      "message": "min"
+   },
+   "of": {
+      "message": "/"
+   },
+   "pause": {
+      "message": "Tauko"
+   },
+   "paused": {
+      "message": "Tauolla"
+   },
+   "remove": {
+      "message": "Poista"
+   },
+   "resume": {
+      "message": "Jatka"
+   },
+   "retry": {
+      "message": "Yritä uudelleen"
+   },
+   "secs": {
+      "message": "sek"
+   },
+   "show_all_downloads": {
+      "message": "Lataushistoria"
+   },
+   "show_in_folder": {
+      "message": "Näytä kansiossa"
+   }
 }

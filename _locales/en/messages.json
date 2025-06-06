@@ -1,6 +1,56 @@
 {
-  "downloads_title": { "message": "Downloads" },
-  "show_all": { "message": "Show all" },
-  "clear_all": { "message": "Clear all" },
-  "files_appear": { "message": "Files you download appear here" }
+   "cancel": {
+      "message": "Cancel"
+   },
+   "canceled": {
+      "message": "Canceled"
+   },
+   "clear_list": {
+      "message": "Clear list"
+   },
+   "days": {
+      "message": "d"
+   },
+   "downloads_title": {
+      "message": "Downloads"
+   },
+   "files_will_appear_here": {
+      "message": "Files you download will appear here"
+   },
+   "hours": {
+      "message": "h"
+   },
+   "left": {
+      "message": "left"
+   },
+   "mins": {
+      "message": "min"
+   },
+   "of": {
+      "message": "of"
+   },
+   "pause": {
+      "message": "Pause"
+   },
+   "paused": {
+      "message": "Paused"
+   },
+   "remove": {
+      "message": "Remove"
+   },
+   "resume": {
+      "message": "Resume"
+   },
+   "retry": {
+      "message": "Retry"
+   },
+   "secs": {
+      "message": "sec"
+   },
+   "show_all_downloads": {
+      "message": "Show all downloads"
+   },
+   "show_in_folder": {
+      "message": "Show in folder"
+   }
 }
