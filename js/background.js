@@ -3,11 +3,20 @@
 console.info("[SW] Service worker script loaded at", new Date().toISOString());
 
 let canvas, ctx;
-try {
-  canvas = new OffscreenCanvas(38, 38);
-  ctx = canvas.getContext('2d', { willReadFrequently: true });
-} catch (e) {
-  console.error("[SW] Canvas init error:", e);
+let isInitialized = false;
+
+async function initCanvas() {
+  try {
+    canvas = new OffscreenCanvas(38, 38);
+    ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+      throw new Error("Could not get canvas context");
+    }
+  } catch (e) {
+    console.error("[SW] Canvas init error:", e);
+    canvas = null;
+    ctx = null;
+  }
 }
 
 let isPopupOpen = false;
@@ -30,10 +39,20 @@ self.addEventListener('activate', event => {
 });
 
 function initialize() {
+  if (isInitialized) return;
   console.info("[SW] initialize() called at", new Date().toISOString());
+  isInitialized = true;
+  
+  // Disable Chrome's native download shelf
+  if (chrome.downloads && chrome.downloads.setShelfEnabled) {
+    chrome.downloads.setShelfEnabled(false);
+  }
+  
+  initCanvas();
   setDefaultBlueIcon();
   refreshStateAndIcon();
 }
+
 if (chrome && chrome.runtime) {
   if (chrome.runtime.onStartup) {
     chrome.runtime.onStartup.addListener(() => {
@@ -48,7 +67,13 @@ if (chrome && chrome.runtime) {
     });
   }
 }
-initialize();
+
+// Only initialize once on startup
+setTimeout(() => {
+  if (!isInitialized) {
+    initialize();
+  }
+}, 100);
 
 if (chrome && chrome.downloads) {
   chrome.downloads.onCreated.addListener(item => {
@@ -180,38 +205,56 @@ function updateDownloadsState(downloads) {
   downloadsState = {};
   downloads.forEach(item => { downloadsState[item.id] = item; });
 }
+
 function refreshStateAndIcon() {
+  // Clear existing timer first
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  
+  if (!chrome.downloads) return;
+  
   chrome.downloads.search({}, function (allDownloads) {
+    if (chrome.runtime.lastError) {
+      console.error("[SW] refreshStateAndIcon error:", chrome.runtime.lastError);
+      return;
+    }
+    
     updateDownloadsState(allDownloads);
     const inProgress = allDownloads.filter(d =>
       d.state === "in_progress" && !d.paused && d.totalBytes > 0
     );
+    
     if (inProgress.length > 0) {
       const progressItem = inProgress.reduce((latest, item) => {
         const end = new Date(item.estimatedEndTime || 0).getTime();
         const latestEnd = new Date(latest.estimatedEndTime || 0).getTime();
         return end > latestEnd ? item : latest;
       }, inProgress[0]);
+      
       if (progressItem && progressItem.totalBytes > 0) {
         const progress = progressItem.bytesReceived / progressItem.totalBytes;
         if (progress > 0 && progress < 1) {
           drawToolbarProgressIcon(progress);
-          pollTimer = setInterval(refreshStateAndIcon, 1000);
+          // Limit polling frequency to prevent hangs
+          pollTimer = setInterval(() => {
+            if (pollTimer) refreshStateAndIcon();
+          }, 2000);
           return;
         }
       }
     }
+    
     if (allDownloads.some(item => item.state === "complete" && item.exists !== false)) {
       drawToolbarIcon(unseen, "#00CC00");
       return;
     }
+    
     setDefaultBlueIcon();
   });
 }
+
 function setDefaultBlueIcon() {
   drawToolbarIcon([], "#00286A");
 }

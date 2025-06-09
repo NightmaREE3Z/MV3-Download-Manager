@@ -3,13 +3,13 @@
 document.addEventListener("DOMContentLoaded", function () {
   var downloadsEl = document.getElementById("downloads");
   if (downloadsEl) {
-    downloadsEl.innerHTML = "<div>Loading…</div>";
+    downloadsEl.textContent = "Loading…";
   }
   var hangMsg = document.getElementById("popup-hang-msg");
   var hangTimeout = setTimeout(function () {
     if (hangMsg) {
       hangMsg.style.display = "block";
-      hangMsg.innerHTML = "Still loading… Chrome is slow to start extensions.<br>Please wait, or close and reopen the popup.<br><br><span style='font-size:11px;'>If this happens often, it's a Chrome Manifest V3 bug, not your fault!</span>";
+      hangMsg.textContent = "Still loading… Chrome is slow to start extensions. Please wait, or close and reopen the popup. If this happens often, it's a Chrome bug. Try reloading the extension.";
     }
   }, 3000);
 
@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", function () {
     clearTimeout(hangTimeout);
     if (hangMsg) {
       hangMsg.style.display = "none";
-      hangMsg.innerHTML = "";
+      hangMsg.textContent = "";
     }
   };
 
@@ -80,7 +80,7 @@ const Format = {
 };
 
 const DEFAULT_DOWNLOAD_ICON =
-  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='21' width='18' height='2' rx='1' fill='%230b57d0'/></g></svg>";
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke='%230b57d0' stroke-width='2'><path d='M12 3v13'/><path d='M7 13l5 5 5-5'/><rect x='3' y='19' width='18' height='2' rx='1'/></g></svg>";
 
 function getProperFilename(filename) {
   const backArray = filename.split("\\");
@@ -236,43 +236,65 @@ async function robustDownloadSearch(options, maxRetries = 2) {
   while (tries <= maxRetries) {
     try {
       console.log("Popup: downloads.search try", tries, "at", Date.now());
-      return await withTimeout(cb => chrome.downloads.search(options, cb), 2000);
+      return await withTimeout(cb => chrome.downloads.search(options, cb), 3000);
     } catch (e) {
       console.warn("Popup: downloads.search attempt", tries, "failed:", e.message);
       tries++;
       if (tries > maxRetries) throw e;
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 500));
     }
   }
 }
 
 async function initializePopup() {
-  // Hang detection: show a message if background/service worker takes too long to respond
-  let hangTimeout = setTimeout(function () {
-    if (typeof showHangMsg === "function") showHangMsg();
-  }, 3000);
+  let retryCount = 0;
+  const maxRetries = 3;
+  
+  async function attemptInit() {
+    try {
+      // Hang detection: show a message if background/service worker takes too long to respond
+      let hangTimeout = setTimeout(function () {
+        if (typeof showHangMsg === "function") showHangMsg();
+      }, 3000);
 
-  // Wake up background/service worker
-  chrome.runtime.sendMessage({ ping: true }, async (resp) => {
-    if (chrome.runtime.lastError) {
-      clearTimeout(hangTimeout);
-      if (typeof showHangMsg === "function") showHangMsg();
-      showPopupError("Background not responding: " + chrome.runtime.lastError.message);
-      return;
+      // Wake up background/service worker with retry logic
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ ping: true }, async (resp) => {
+          if (chrome.runtime.lastError) {
+            clearTimeout(hangTimeout);
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          
+          clearTimeout(hangTimeout);
+          if (typeof hideHangMsg === "function") hideHangMsg();
+          if (window.clearHangMsg) window.clearHangMsg();
+
+          // Localization before anything
+          if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
+            const initialLocale = getLocaleFromStorage();
+            await setLocale(initialLocale);
+          }
+
+          // Now safe to render UI
+          await render();
+          resolve();
+        });
+      });
+    } catch (error) {
+      retryCount++;
+      if (retryCount < maxRetries) {
+        console.warn(`Popup init attempt ${retryCount} failed, retrying...`, error);
+        await new Promise(r => setTimeout(r, 500));
+        return attemptInit();
+      } else {
+        showPopupError("Failed to initialize after " + maxRetries + " attempts: " + error.message);
+        throw error;
+      }
     }
-    clearTimeout(hangTimeout);
-    if (typeof hideHangMsg === "function") hideHangMsg();
-    if (window.clearHangMsg) window.clearHangMsg();
-
-    // Localization before anything
-    if (typeof getLocaleFromStorage === "function" && typeof setLocale === "function") {
-      const initialLocale = getLocaleFromStorage();
-      await setLocale(initialLocale);
-    }
-
-    // Now safe to render UI
-    await render();
-  });
+  }
+  
+  return attemptInit();
 }
 
 let debounceTimeout = null;
@@ -291,7 +313,7 @@ async function render() {
   function setAdaptivePolling(inProgress = false) {
     if (pollInterval) clearInterval(pollInterval);
     pollingFast = inProgress;
-    pollInterval = setInterval(scheduleRender, inProgress ? 1200 : 3500);
+    pollInterval = setInterval(scheduleRender, inProgress ? 1500 : 4000);
   }
 
   function updateDownloadsView(results) {
@@ -526,7 +548,7 @@ function startTimer(id) {
       stopTimer(id);
     }
   };
-  timers[id] = setInterval(timer, 1500);
+  timers[id] = setInterval(timer, 2000);
   setTimeout(timer, 1);
 }
 

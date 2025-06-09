@@ -1,56 +1,20 @@
 {
-   "cancel": {
-      "message": "Cancel"
-   },
-   "canceled": {
-      "message": "Canceled"
-   },
-   "clear_list": {
-      "message": "Clear list"
-   },
-   "days": {
-      "message": "d"
-   },
-   "downloads_title": {
-      "message": "Downloads"
-   },
-   "files_will_appear_here": {
-      "message": "Files you download will appear here"
-   },
-   "hours": {
-      "message": "h"
-   },
-   "left": {
-      "message": "left"
-   },
-   "mins": {
-      "message": "min"
-   },
-   "of": {
-      "message": "of"
-   },
-   "pause": {
-      "message": "Pause"
-   },
-   "paused": {
-      "message": "Paused"
-   },
-   "remove": {
-      "message": "Remove"
-   },
-   "resume": {
-      "message": "Resume"
-   },
-   "retry": {
-      "message": "Retry"
-   },
-   "secs": {
-      "message": "sec"
-   },
-   "show_all_downloads": {
-      "message": "Show all downloads"
-   },
-   "show_in_folder": {
-      "message": "Show in folder"
-   }
+  "downloads_title": { "message": "Downloads" },
+  "show_all_downloads": { "message": "Show all downloads" },
+  "clear_list": { "message": "Clear list" },
+  "pause": { "message": "Pause" },
+  "resume": { "message": "Resume" },
+  "cancel": { "message": "Cancel" },
+  "retry": { "message": "Retry" },
+  "show_in_folder": { "message": "Show in folder" },
+  "remove": { "message": "Remove" },
+  "files_will_appear_here": { "message": "Files you download will appear here" },
+  "left": { "message": "left" },
+  "paused": { "message": "Paused" },
+  "canceled": { "message": "Canceled" },
+  "secs": { "message": "sec" },
+  "mins": { "message": "min" },
+  "hours": { "message": "h" },
+  "days": { "message": "d" },
+  "of": { "message": "of" }
 }
