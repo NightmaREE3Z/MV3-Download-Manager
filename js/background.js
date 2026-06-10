@@ -27,6 +27,92 @@ let prefersColorSchemeDark = true;
 let downloadsState = {};
 let pollTimer = null;
 
+// === Downloads Anti-WebP background fetch bridge ===
+// Google Images preview overlays live on google.* while the actual image may live on
+// another CDN. Drawing that cross-origin image directly to canvas taints it, so the
+// content script can ask the extension background to fetch the bytes with extension
+// host permissions, return a data URL, and let the content script convert that to PNG.
+const DOWNLOADS_ANTIWEBP_MAX_FETCH_BYTES = 18 * 1024 * 1024;
+
+function downloadsAntiwebpArrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
+function downloadsAntiwebpIsHttpImageFetchUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch (e) {
+    return false;
+  }
+}
+
+function downloadsAntiwebpIsFetchMessage(message) {
+  return !!(message && (
+    message.type === 'DOWNLOADS_ANTIWEBP_FETCH_IMAGE_AS_DATA_URL' ||
+    message.type === 'BRAVEFOX_ANTIWEBP_FETCH_IMAGE_AS_DATA_URL'
+  ));
+}
+
+async function downloadsAntiwebpFetchImageAsDataUrl(value) {
+  try {
+    const url = String(value || '').trim();
+    if (!downloadsAntiwebpIsHttpImageFetchUrl(url)) {
+      return { ok: false, error: 'Invalid image URL' };
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'follow',
+      headers: {
+        'Accept': 'image/png,image/jpeg,image/gif,image/bmp,image/*;q=0.8,*/*;q=0.1'
+      }
+    });
+
+    if (!response || !response.ok) {
+      return { ok: false, error: 'Fetch failed', status: response ? response.status : 0 };
+    }
+
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!/^image\//i.test(contentType)) {
+      return { ok: false, error: 'Response was not an image', contentType };
+    }
+
+    // Preserve GIF/SVG instead of flattening/rewriting them.
+    if (/^image\/(?:gif|svg\+xml)$/i.test(contentType)) {
+      return { ok: false, error: 'Skipped animated/vector image', contentType };
+    }
+
+    const buffer = await response.arrayBuffer();
+    if (!buffer || buffer.byteLength <= 0) {
+      return { ok: false, error: 'Empty image response', contentType };
+    }
+    if (buffer.byteLength > DOWNLOADS_ANTIWEBP_MAX_FETCH_BYTES) {
+      return { ok: false, error: 'Image too large', size: buffer.byteLength, contentType };
+    }
+
+    const base64 = downloadsAntiwebpArrayBufferToBase64(buffer);
+    return {
+      ok: true,
+      contentType,
+      size: buffer.byteLength,
+      dataUrl: `data:${contentType || 'image/png'};base64,${base64}`
+    };
+  } catch (e) {
+    return { ok: false, error: e && (e.message || String(e)) };
+  }
+}
+
+
 self.addEventListener('error', function (e) {
   console.error('[SW] Uncaught error:', e.message, e);
 });
@@ -126,6 +212,14 @@ if (chrome && chrome.runtime) {
 
     let responded = false;
     try {
+      if (downloadsAntiwebpIsFetchMessage(message)) {
+        downloadsAntiwebpFetchImageAsDataUrl(message.url).then(
+          response => { try { sendResponse(response); } catch (e) {} },
+          error => { try { sendResponse({ ok: false, error: error && (error.message || String(error)) }); } catch (e) {} }
+        );
+        responded = true;
+        return true;
+      }
       if (message && message.type === 'init') {
         sendResponse({ ok: true, time: Date.now() });
         responded = true;
